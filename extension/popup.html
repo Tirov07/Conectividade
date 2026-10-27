@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <style>
+    body { font-family: Segoe UI, Arial, sans-serif; width: 280px; margin: 0; padding: 14px; }
+    h1 { font-size: 14px; margin: 0 0 10px; }
+    .status { display: flex; align-items: center; gap: 8px; font-size: 13px; margin-bottom: 8px; }
+    .dot { width: 10px; height: 10px; border-radius: 50%; background: #bbb; }
+    .dot.ok { background: #2ecc71; }
+    .dot.off { background: #e74c3c; }
+    .hint { font-size: 11px; color: #666; margin-top: 10px; line-height: 1.4; }
+  </style>
+</head>
+<body>
+  <h1>Conectividade Canadá</h1>
+  <div class="status">
+    <span id="dot-host" class="dot"></span>
+    <span>Comunicação com o SGA</span>
+  </div>
+  <div class="status">
+    <span id="dot-login" class="dot"></span>
+    <span>Sessão do Cronotacógrafo</span>
+  </div>
+  <div class="hint">
+    Faça o login manualmente no site do Cronotacógrafo. As consultas de placa
+    serão feitas automaticamente nesta aba, sem abrir outro navegador.
+  </div>
+  <script src="popup.js"></script>
+</body>
+</html>

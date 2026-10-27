@@ -1,0 +1,11 @@
+# Build artifacts .NET
+native-host/bin/
+native-host/obj/
+*.user
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db

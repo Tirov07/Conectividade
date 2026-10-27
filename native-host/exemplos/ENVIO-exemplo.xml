@@ -1,0 +1,11 @@
+<ConsultaSelagemEnvio xmlns="www.canainfo.com.br">
+  <Operacao>6</Operacao>
+  <Url>https://cronotacografo.rbmlq.gov.br/selagens/consultar</Url>
+  <Placa>CVN8588</Placa>
+  <Renavam>
+  </Renavam>
+  <Chassi>
+  </Chassi>
+  <ConsultaGRU>False</ConsultaGRU>
+  <UrlConsultaGRU>https://cronotacografo.rbmlq.gov.br/grus/consultar</UrlConsultaGRU>
+</ConsultaSelagemEnvio>

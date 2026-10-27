@@ -1,0 +1,11 @@
+Windows Registry Editor Version 5.00
+
+; Registra o native host "com.canada.conectividade" no Chrome.
+; O valor aponta para o manifesto JSON do host.
+;
+; AJUSTE o caminho abaixo para onde o com.canada.conectividade.json foi instalado.
+; Use \\ (barra dupla) nos caminhos do .reg.
+;
+; Instala para o usuário atual (não exige admin):
+[HKEY_CURRENT_USER\Software\Google\Chrome\NativeMessagingHosts\com.canada.conectividade]
+@="C:\\sga\\conectividade\\com.canada.conectividade.json"

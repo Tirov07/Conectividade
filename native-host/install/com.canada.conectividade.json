@@ -1,0 +1,9 @@
+{
+  "name": "com.canada.conectividade",
+  "description": "Native host da Conectividade Canadá (ponte SGA <-> extensão Cronotacógrafo)",
+  "path": "C:\\sga\\conectividade\\ConectividadeHost.exe",
+  "type": "stdio",
+  "allowed_origins": [
+    "chrome-extension://SUBSTITUA_PELO_ID_DA_EXTENSAO/"
+  ]
+}

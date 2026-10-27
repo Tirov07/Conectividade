@@ -1,0 +1,29 @@
+{
+  "manifest_version": 3,
+  "name": "Conectividade Canadá - Cronotacógrafo Inmetro",
+  "version": "0.1.0",
+  "description": "Consulta de selagem no Cronotacógrafo (Inmetro) direto no Chrome do cliente, integrada ao SGA via native host. Substitui o navegador à parte da Conectividade.",
+  "permissions": [
+    "nativeMessaging",
+    "tabs",
+    "scripting",
+    "storage"
+  ],
+  "host_permissions": [
+    "https://cronotacografo.rbmlq.gov.br/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://cronotacografo.rbmlq.gov.br/*"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_title": "Conectividade Canadá",
+    "default_popup": "popup.html"
+  }
+}

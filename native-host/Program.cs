@@ -39,7 +39,11 @@ public static class Program
     // chave = caminho completo do arquivo em C:\sga\req; valor = quando começou.
     // Se um pedido travar (extensão morreu, etc.), destravamos após este tempo.
     private static readonly ConcurrentDictionary<string, DateTime> EmProcessamento = new();
-    private static readonly TimeSpan TempoMaxProcessamento = TimeSpan.FromSeconds(90);
+    // Tempo de "destravamento" de segurança: só reprocessa um mesmo arquivo se
+    // ele ficou preso além disto (ex.: host travou). Precisa ser MAIOR que o
+    // pior lote possível (Op. 13 com ~500 placas × ~10s ≈ 83 min), senão o
+    // watcher poderia re-enfileirar o lote no meio e causar retrabalho enorme.
+    private static readonly TimeSpan TempoMaxProcessamento = TimeSpan.FromHours(3);
 
     // Fila de arquivos de envio a processar, UM DE CADA VEZ. A extensão só faz
     // uma consulta por vez (mesma aba do Chrome), então serializamos aqui.

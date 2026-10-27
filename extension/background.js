@@ -94,10 +94,14 @@ async function consultarSelagem(pedido) {
     const resultado = await new Promise((resolve, reject) => {
       const idConsulta = `c-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
+      // 70s: um pouco abaixo dos 75s que o host espera por placa, para que a
+      // extensão responda (com erro) ANTES de o host desistir — assim, num
+      // lote, a placa vira StatusConsulta=False e a consulta segue para a
+      // próxima em vez de o host estourar o tempo sozinho.
       const timeout = setTimeout(() => {
         pendentes.delete(idConsulta);
         reject(new Error("Tempo esgotado aguardando a resposta da consulta."));
-      }, 60000);
+      }, 70000);
 
       pendentes.set(idConsulta, { resolve, timeout });
 

@@ -47,7 +47,7 @@ public static class Program
 
     // Sincroniza a espera da resposta da extensão para o pedido atual.
     private static readonly object RespostaLock = new();
-    private static ConsultaSelagemResposta? RespostaAtual;
+    private static ResultadoConsulta? RespostaBrutaAtual;
     private static ManualResetEventSlim? SinalResposta;
 
     // Arquivos processados há pouco: usado para ignorar eventos "fantasma" do
@@ -213,11 +213,13 @@ public static class Program
                 return; // nada a fazer; sai em silêncio.
             }
 
-            ConsultaSelagemEnvio envio;
+            // Detecta a operação pela tag raiz do XML, sem assumir o tipo.
+            int operacao;
+            string rootTag;
             try
             {
                 EsperarArquivoLiberar(caminho);
-                envio = LerEnvio(caminho);
+                (operacao, rootTag) = DetectarOperacao(caminho);
             }
             catch (FileNotFoundException)
             {
@@ -229,56 +231,19 @@ public static class Program
                 return;
             }
 
-            Log.Info($"Envio lido: Operacao={envio.Operacao} | {DescreverCriterios(envio)} ({Path.GetFileName(caminho)})");
-
-            // Começamos só com a Operação 6 (consulta de selagem por placa).
-            if (envio.Operacao != 6)
+            // Roteia por operação.
+            if (rootTag == "ConsultaLotePlacasEnvio" || operacao == 13)
             {
-                Log.Info($"Operação {envio.Operacao} ainda não implementada. Ignorando por ora.");
-                return;
+                ProcessarLote(caminho);
             }
-
-            // Prepara a espera pela resposta ANTES de enviar o pedido.
-            var sinal = new ManualResetEventSlim(false);
-            lock (RespostaLock)
+            else if (rootTag == "ConsultaSelagemEnvio" || operacao == 6)
             {
-                RespostaAtual = null;
-                SinalResposta = sinal;
+                ProcessarSelagem(caminho);
             }
-
-            var id = Guid.NewGuid().ToString("N");
-            Pendentes[id] = new PedidoPendente { ArquivoOrigem = caminho, Placa = envio.Placa };
-
-            NativeMessaging.WriteMessage(new
+            else
             {
-                tipo = "consultar_selagem",
-                id,
-                placa = envio.Placa ?? "",
-                chassi = envio.Chassi ?? "",
-                renavam = envio.Renavam ?? ""
-            });
-            Log.Info($"Pedido {id} enviado à extensão ({DescreverCriterios(envio)}).");
-
-            // Espera a extensão responder (até 75s). Como estamos na thread da
-            // fila, o próximo arquivo só será processado depois daqui.
-            bool respondeu = sinal.Wait(TimeSpan.FromSeconds(75));
-
-            ConsultaSelagemResposta resposta;
-            lock (RespostaLock)
-            {
-                SinalResposta = null;
-                resposta = RespostaAtual ?? new ConsultaSelagemResposta
-                {
-                    Status = false,
-                    Message = "Tempo esgotado aguardando a resposta da consulta."
-                };
+                Log.Info($"Operação {operacao} (raiz '{rootTag}') ainda não implementada. Ignorando por ora.");
             }
-
-            if (!respondeu)
-                Log.Error($"Pedido {id} expirou sem resposta da extensão.");
-
-            Pendentes.TryRemove(id, out _);
-            GravarResposta(resposta, new PedidoPendente { ArquivoOrigem = caminho, Placa = envio.Placa ?? "" });
         }
         finally
         {
@@ -288,6 +253,109 @@ public static class Program
             // ignorados no EnfileirarEnvio.
             ProcessadosRecentemente[caminho] = DateTime.UtcNow;
         }
+    }
+
+    /// <summary>
+    /// Descobre a operação e a tag raiz do XML sem assumir o tipo concreto.
+    /// </summary>
+    private static (int operacao, string rootTag) DetectarOperacao(string caminho)
+    {
+        var doc = new XmlDocument();
+        doc.Load(caminho);
+        var root = doc.DocumentElement?.LocalName ?? "";
+        var opNós = doc.GetElementsByTagName("Operacao");
+        int op = opNós.Count > 0 && int.TryParse((opNós[0]?.InnerText ?? "").Trim(), out var n) ? n : 0;
+        return (op, root);
+    }
+
+    /// <summary>
+    /// Consulta UMA placa via extensão e devolve o resultado (status + dados
+    /// brutos em JSON). É o tijolo reutilizado tanto pela Op. 6 (uma placa)
+    /// quanto pela Op. 13 (lote). BLOQUEANTE: espera a extensão responder.
+    /// </summary>
+    private static ResultadoConsulta ConsultarUmaPlaca(string placa, string renavam, string chassi, int timeoutSeg = 75)
+    {
+        var sinal = new ManualResetEventSlim(false);
+        lock (RespostaLock)
+        {
+            RespostaBrutaAtual = null;
+            SinalResposta = sinal;
+        }
+
+        var id = Guid.NewGuid().ToString("N");
+        Pendentes[id] = new PedidoPendente { ArquivoOrigem = "", Placa = placa };
+
+        NativeMessaging.WriteMessage(new
+        {
+            tipo = "consultar_selagem",
+            id,
+            placa = placa ?? "",
+            chassi = chassi ?? "",
+            renavam = renavam ?? ""
+        });
+
+        bool respondeu = sinal.Wait(TimeSpan.FromSeconds(timeoutSeg));
+
+        ResultadoConsulta resultado;
+        lock (RespostaLock)
+        {
+            SinalResposta = null;
+            resultado = RespostaBrutaAtual ?? new ResultadoConsulta
+            {
+                Status = false,
+                Message = "Tempo esgotado aguardando a resposta da consulta."
+            };
+        }
+        Pendentes.TryRemove(id, out _);
+
+        if (!respondeu)
+            Log.Error($"Consulta da placa '{placa}' expirou sem resposta da extensão.");
+
+        return resultado;
+    }
+
+    // ---- Operação 6: consulta de selagem (uma placa) ------------------------
+
+    private static void ProcessarSelagem(string caminho)
+    {
+        var envio = LerEnvio(caminho);
+        Log.Info($"Op.6 Selagem | {DescreverCriterios(envio)} ({Path.GetFileName(caminho)})");
+
+        var r = ConsultarUmaPlaca(envio.Placa, envio.Renavam, envio.Chassi);
+
+        var resposta = new ConsultaSelagemResposta { Status = r.Status, Message = r.Message };
+        if (r.Status && r.Dados.HasValue)
+            PreencherDados(resposta, r.Dados.Value);
+
+        GravarResposta(resposta, new PedidoPendente { ArquivoOrigem = caminho, Placa = envio.Placa ?? "" });
+    }
+
+    // ---- Operação 13: consulta de lote de placas ----------------------------
+
+    private static void ProcessarLote(string caminho)
+    {
+        var envio = LerLote(caminho);
+        Log.Info($"Op.13 Lote | {envio.Lote.Count} placas ({Path.GetFileName(caminho)})");
+
+        var resposta = new ConsultaLotePlacasResposta { Status = true };
+        int ok = 0, falhou = 0, n = 0;
+
+        foreach (var item in envio.Lote)
+        {
+            n++;
+            Log.Info($"Op.13 consultando placa {n}/{envio.Lote.Count}: {item.Placa} (cliente {item.CodCliente})");
+
+            var r = ConsultarUmaPlaca(item.Placa, "", "");
+            var consulta = MontarItemLote(item, r);
+            resposta.Consultas.Add(consulta);
+
+            if (consulta.StatusConsulta) ok++; else falhou++;
+        }
+
+        resposta.Message = $"CONSULTA DE LOTE FINALIZADA. {ok} ok, {falhou} sem dados.";
+        Log.Info($"Op.13 lote concluído: {ok} ok, {falhou} sem dados de {envio.Lote.Count}.");
+
+        GravarRespostaLote(resposta, caminho);
     }
 
     // ---- Trata a resposta da extensão --------------------------------------
@@ -315,20 +383,15 @@ public static class Program
         var status = msg.TryGetProperty("status", out var st) && st.GetBoolean();
         var message = msg.TryGetProperty("message", out var mm) ? mm.GetString() ?? "" : "";
 
-        var resposta = new ConsultaSelagemResposta
-        {
-            Status = status,
-            Message = message
-        };
-
+        var resultado = new ResultadoConsulta { Status = status, Message = message };
         if (status && msg.TryGetProperty("dados", out var dados) && dados.ValueKind == JsonValueKind.Object)
-            PreencherDados(resposta, dados);
+            resultado.Dados = dados.Clone(); // guarda o JSON bruto para quem consumir
 
-        // Entrega a resposta para a thread da fila (que está esperando) e a
-        // acorda. A gravação do XML é feita lá, de forma sequencial.
+        // Entrega o resultado para a thread da fila (que está esperando) e a
+        // acorda. A montagem/gravação do XML é feita lá, de forma sequencial.
         lock (RespostaLock)
         {
-            RespostaAtual = resposta;
+            RespostaBrutaAtual = resultado;
             SinalResposta?.Set();
         }
     }
@@ -492,6 +555,147 @@ public static class Program
         return partes.Count > 0 ? string.Join(" ", partes) : "(sem criterios)";
     }
 
+    // ---- Leitura/montagem/gravação do LOTE (Op. 13) -------------------------
+
+    /// <summary>
+    /// Lê o envio de lote (ConsultaLotePlacasEnvio) de forma tolerante ao
+    /// formato legado do SGA (namespace sem http://).
+    /// </summary>
+    private static ConsultaLotePlacasEnvio LerLote(string caminho)
+    {
+        var doc = new XmlDocument();
+        doc.Load(caminho);
+
+        string Pegar(XmlNode? no, string nomeLocal)
+        {
+            if (no == null) return "";
+            foreach (XmlNode filho in no.ChildNodes)
+                if (filho.LocalName == nomeLocal)
+                    return (filho.InnerText ?? "").Trim();
+            return "";
+        }
+
+        var envio = new ConsultaLotePlacasEnvio
+        {
+            Operacao = 13
+        };
+
+        foreach (XmlNode no in doc.GetElementsByTagName("Lote"))
+        {
+            var id = 0;
+            if (no.Attributes?["Id"]?.Value is string s) int.TryParse(s, out id);
+            envio.Lote.Add(new LoteItemEnvio
+            {
+                Id = id,
+                Placa = Pegar(no, "Placa"),
+                CodCliente = Pegar(no, "CodCliente")
+            });
+        }
+
+        return envio;
+    }
+
+    /// <summary>
+    /// Monta um item de resposta do lote a partir do resultado cru da consulta
+    /// de uma placa. Mapeia os mesmos dados da Op. 6 para o layout do lote.
+    /// </summary>
+    private static LoteItemResposta MontarItemLote(LoteItemEnvio item, ResultadoConsulta r)
+    {
+        var c = new LoteItemResposta
+        {
+            Id = item.Id,
+            CodCliente = item.CodCliente,
+            StatusConsulta = r.Status
+        };
+        // Placa sempre volta (mesmo sem dados, para o SGA casar pelo Id/placa).
+        c.Veiculo.Placa = item.Placa;
+
+        if (!r.Status || !r.Dados.HasValue)
+            return c; // sem dados: StatusConsulta=False, campos vazios.
+
+        var d = r.Dados.Value;
+
+        if (d.TryGetProperty("veiculo", out var v))
+        {
+            c.Veiculo.Renavam = S(v, "renavam");
+            c.Veiculo.Placa = S(v, "placa").Length > 0 ? S(v, "placa") : item.Placa;
+            c.Veiculo.Marca = S(v, "marca");
+            c.Veiculo.Modelo = S(v, "modelo");
+            c.Veiculo.Ano = S(v, "ano");
+            c.Veiculo.Aro = S(v, "aro");
+            c.Veiculo.Pneu = S(v, "pneu");
+        }
+        if (d.TryGetProperty("selagem", out var s))
+        {
+            c.Selagem.DataSelagem = S(s, "dataSelagem");
+            c.Selagem.PostoSelagem = S(s, "postoSelagem");
+        }
+        if (d.TryGetProperty("ensaio", out var en))
+        {
+            c.Ensaio.UFEnsaio = S(en, "ufEnsaio");
+            c.Ensaio.PostoEnsaio = S(en, "postoEnsaio");
+            c.Ensaio.DataEnsaio = S(en, "dataEnsaio");
+            c.Ensaio.VelMax = S(en, "velMax");
+            c.Ensaio.PadraoUtilizado = S(en, "padraoUtilizado");
+        }
+        if (d.TryGetProperty("equipamento", out var eq))
+        {
+            c.Equipamento.Marca = S(eq, "marca");
+            c.Equipamento.Modelo = S(eq, "modelo");
+            c.Equipamento.NroSerie = S(eq, "nroSerie");
+        }
+        if (d.TryGetProperty("resultado", out var re))
+        {
+            c.Resultado.UFResultado = S(re, "ufResultado");
+            c.Resultado.RespTecnico = S(re, "respTecnico");
+            c.Resultado.DataEmissao = S(re, "dataEmissao");
+            c.Resultado.DataValidade = S(re, "dataValidade");
+            c.Resultado.NumCertificado = S(re, "numCertificado");
+            c.Resultado.TipoCertificado = S(re, "tipoCertificado");
+
+            // Certificado1 e Certificado2 — hoje repetem a mesma informação do
+            // resultado (confirmar o porquê com o responsável da Conectividade
+            // atual; por ora seguimos o padrão de repetir).
+            c.Certificado1.NroDocto1 = c.Resultado.NumCertificado;
+            c.Certificado1.Tipo1 = c.Resultado.TipoCertificado;
+            c.Certificado2.NroDocto2 = c.Resultado.NumCertificado;
+            c.Certificado2.Tipo2 = c.Resultado.TipoCertificado;
+        }
+
+        return c;
+    }
+
+    private static void GravarRespostaLote(ConsultaLotePlacasResposta resposta, string caminhoOrigem)
+    {
+        var nomeArquivo = Path.GetFileName(caminhoOrigem);
+        var destino = Path.Combine(RespDir, nomeArquivo);
+        try
+        {
+            SerializarLote(resposta, destino);
+            Log.Info($"Resposta de lote gravada: {destino} ({resposta.Consultas.Count} placas)");
+            try { File.Delete(caminhoOrigem); } catch { /* best-effort */ }
+        }
+        catch (Exception ex)
+        {
+            Log.Error($"Falha ao gravar resposta de lote '{destino}': {ex.Message}");
+        }
+    }
+
+    private static void SerializarLote(ConsultaLotePlacasResposta obj, string caminho)
+    {
+        var ser = new XmlSerializer(typeof(ConsultaLotePlacasResposta));
+        var settings = new XmlWriterSettings { Indent = true, Encoding = new System.Text.UTF8Encoding(false) };
+        var ns = new XmlSerializerNamespaces();
+        ns.Add("", "www.canainfo.com.br");
+
+        var tmp = caminho + ".tmp";
+        using (var writer = XmlWriter.Create(tmp, settings))
+            ser.Serialize(writer, obj, ns);
+
+        if (File.Exists(caminho)) File.Delete(caminho);
+        File.Move(tmp, caminho);
+    }
+
     private static void Serializar<T>(T obj, string caminho)
     {
         var ser = new XmlSerializer(typeof(T));
@@ -530,5 +734,16 @@ public static class Program
     {
         public string ArquivoOrigem { get; set; } = "";
         public string Placa { get; set; } = "";
+    }
+
+    /// <summary>
+    /// Resultado cru de UMA consulta à extensão: status, mensagem e o bloco
+    /// de dados em JSON (quando houve sucesso). Reaproveitado por Op. 6 e 13.
+    /// </summary>
+    private sealed class ResultadoConsulta
+    {
+        public bool Status { get; set; }
+        public string Message { get; set; } = "";
+        public JsonElement? Dados { get; set; }
     }
 }

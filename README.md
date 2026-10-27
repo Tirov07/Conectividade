@@ -142,9 +142,17 @@ Os logs ficam em `%LOCALAPPDATA%\CanadaConectividade\host.log`.
 
 ## Roadmap
 
-- [x] Operação 6 — consulta de selagem por placa (ponta a ponta)
-- [ ] Validar numa máquina real com o SGA
-- [ ] Demais operações (GRU, etc.) conforme o protocolo
+- [x] Operação 6 — consulta de selagem por placa (placa/renavam/chassi), testada em máquina real
+- [x] Operação 6 — "sincronizar última selagem" (é a própria Op. 6 com os 3 campos preenchidos)
+- [x] Operação 13 — consulta de lote de placas (reusa o fluxo da Op. 6 por placa)
+- [ ] Validar a Op. 13 numa máquina real com o SGA
 - [ ] Keep-alive leve para evitar queda por inatividade
 - [ ] Instalador único (host + registro + extensão)
+
+### Operações suportadas
+
+| Operação | XML raiz | Descrição |
+|---|---|---|
+| **6** | `ConsultaSelagemEnvio` | Consulta/sincroniza a última selagem de uma placa (aceita placa, renavam e/ou chassi). |
+| **13** | `ConsultaLotePlacasEnvio` | Consulta um lote de placas (até ~500). Faz uma consulta por placa, sequencialmente, na tela de selagem, e devolve um `<Consulta Id="n">` por placa com `StatusConsulta` individual. A tela de certificados (`UrlConsulta`) é ignorada de propósito — passou a exigir captcha por placa; a `DataValidade` vem do campo "Informações do resultado da verificação" da tela de selagem. |
 ```

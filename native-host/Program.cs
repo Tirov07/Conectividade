@@ -229,7 +229,7 @@ public static class Program
                 return;
             }
 
-            Log.Info($"Envio lido: Operacao={envio.Operacao} Placa={envio.Placa} ({Path.GetFileName(caminho)})");
+            Log.Info($"Envio lido: Operacao={envio.Operacao} | {DescreverCriterios(envio)} ({Path.GetFileName(caminho)})");
 
             // Começamos só com a Operação 6 (consulta de selagem por placa).
             if (envio.Operacao != 6)
@@ -257,7 +257,7 @@ public static class Program
                 chassi = envio.Chassi ?? "",
                 renavam = envio.Renavam ?? ""
             });
-            Log.Info($"Pedido {id} enviado à extensão (placa {envio.Placa}).");
+            Log.Info($"Pedido {id} enviado à extensão ({DescreverCriterios(envio)}).");
 
             // Espera a extensão responder (até 75s). Como estamos na thread da
             // fila, o próximo arquivo só será processado depois daqui.
@@ -408,7 +408,11 @@ public static class Program
         try
         {
             Serializar(resposta, destino);
-            Log.Info($"Resposta gravada: {destino} (STATUS={resposta.Status})");
+            var placaRet = resposta.Veiculo?.Placa ?? "";
+            var detalhe = resposta.Status
+                ? $"Placa={placaRet} Protocolo={resposta.Selagem?.Protocolo}"
+                : $"Message={resposta.Message}";
+            Log.Info($"Resposta gravada: {destino} (STATUS={resposta.Status} | {detalhe})");
 
             // Remove o arquivo de requisição já processado.
             try { File.Delete(pendente.ArquivoOrigem); } catch { /* best-effort */ }
@@ -472,6 +476,20 @@ public static class Program
             ConsultaGRU = PegarBool("ConsultaGRU"),
             UrlConsultaGRU = Pegar("UrlConsultaGRU")
         };
+    }
+
+    /// <summary>
+    /// Monta uma descrição legível dos critérios de busca para o log, mostrando
+    /// apenas os campos efetivamente preenchidos (placa, renavam e/ou chassi).
+    /// Assim o log deixa claro se a consulta foi por placa OU por renavam.
+    /// </summary>
+    private static string DescreverCriterios(ConsultaSelagemEnvio e)
+    {
+        var partes = new List<string>();
+        if (!string.IsNullOrWhiteSpace(e.Placa)) partes.Add($"Placa={e.Placa}");
+        if (!string.IsNullOrWhiteSpace(e.Renavam)) partes.Add($"Renavam={e.Renavam}");
+        if (!string.IsNullOrWhiteSpace(e.Chassi)) partes.Add($"Chassi={e.Chassi}");
+        return partes.Count > 0 ? string.Join(" ", partes) : "(sem criterios)";
     }
 
     private static void Serializar<T>(T obj, string caminho)

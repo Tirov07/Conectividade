@@ -50,6 +50,13 @@ public static class Program
     private static ConsultaSelagemResposta? RespostaAtual;
     private static ManualResetEventSlim? SinalResposta;
 
+    // Arquivos processados há pouco: usado para ignorar eventos "fantasma" do
+    // watcher que chegam logo depois de deletarmos o arquivo de requisição
+    // (o próprio delete/escrita pode gerar um evento Changed atrasado).
+    // chave = caminho; valor = quando terminamos de processar.
+    private static readonly ConcurrentDictionary<string, DateTime> ProcessadosRecentemente = new();
+    private static readonly TimeSpan PeriodoDeGraca = TimeSpan.FromSeconds(5);
+
     public static void Main()
     {
         Log.Info($"Native host iniciado. REQ={ReqDir} RESP={RespDir}");
@@ -142,6 +149,20 @@ public static class Program
             return;
         }
 
+        // Ignora eventos "fantasma" logo após um processamento (o próprio
+        // delete/escrita gera um evento Changed atrasado para o mesmo nome).
+        var agora = DateTime.UtcNow;
+        if (ProcessadosRecentemente.TryGetValue(caminho, out var quando)
+            && agora - quando < PeriodoDeGraca)
+        {
+            return;
+        }
+
+        // Limpeza leve: remove entradas de período de graça já vencidas.
+        foreach (var kv in ProcessadosRecentemente)
+            if (agora - kv.Value > PeriodoDeGraca)
+                ProcessadosRecentemente.TryRemove(kv.Key, out _);
+
         FilaEnvios.Add(caminho);
     }
 
@@ -185,11 +206,22 @@ public static class Program
 
         try
         {
+            // O arquivo pode ter sido deletado entre o enfileiramento e agora
+            // (ex.: evento duplicado após o delete do processamento anterior).
+            if (!File.Exists(caminho))
+            {
+                return; // nada a fazer; sai em silêncio.
+            }
+
             ConsultaSelagemEnvio envio;
             try
             {
                 EsperarArquivoLiberar(caminho);
                 envio = LerEnvio(caminho);
+            }
+            catch (FileNotFoundException)
+            {
+                return; // sumiu no meio do caminho; ignora sem poluir o log.
             }
             catch (Exception ex)
             {
@@ -251,6 +283,10 @@ public static class Program
         finally
         {
             EmProcessamento.TryRemove(caminho, out _);
+            // Marca o período de graça: eventos do watcher para este mesmo
+            // arquivo nos próximos segundos (gerados pelo delete/escrita) serão
+            // ignorados no EnfileirarEnvio.
+            ProcessadosRecentemente[caminho] = DateTime.UtcNow;
         }
     }
 

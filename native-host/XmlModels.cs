@@ -41,8 +41,19 @@ public class ConsultaSelagemEnvio
 [XmlRoot("ConsultaSelagemResposta", Namespace = "www.canainfo.com.br")]
 public class ConsultaSelagemResposta
 {
-    [XmlElement("STATUS")]
+    // IMPORTANTE: o SGA grava e espera o STATUS como "True"/"False" com a
+    // primeira letra MAIÚSCULA (veja o XML de retorno real). Um bool do .NET
+    // seria serializado como "true"/"false" minúsculo e o SGA poderia não
+    // reconhecer. Por isso guardamos como string e controlamos o valor exato.
+    [XmlIgnore]
     public bool Status { get; set; }
+
+    [XmlElement("STATUS")]
+    public string StatusTexto
+    {
+        get => Status ? "True" : "False";
+        set => Status = value?.Trim().Equals("true", StringComparison.OrdinalIgnoreCase) ?? false;
+    }
 
     [XmlElement("Veiculo")]
     public VeiculoDto Veiculo { get; set; } = new();

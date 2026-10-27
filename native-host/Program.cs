@@ -132,7 +132,7 @@ public static class Program
         try
         {
             EsperarArquivoLiberar(caminho);
-            envio = Desserializar<ConsultaSelagemEnvio>(caminho);
+            envio = LerEnvio(caminho);
         }
         catch (Exception ex)
         {
@@ -300,11 +300,56 @@ public static class Program
 
     // ---- Serialização XML ---------------------------------------------------
 
-    private static T Desserializar<T>(string caminho)
+    /// <summary>
+    /// Lê o XML de envio do SGA de forma TOLERANTE ao formato legado.
+    ///
+    /// O SGA gera um XML que o XmlSerializer padrão do .NET rejeita por dois
+    /// motivos:
+    ///   1. O namespace é "www.canainfo.com.br" (sem http://), o que confunde
+    ///      o casamento rígido de elementos.
+    ///   2. Campos booleanos vêm como "True"/"False" (maiúsculo), mas o XML
+    ///      padrão exige "true"/"false" minúsculo — isso quebrava na leitura
+    ///      do elemento <ConsultaGRU>.
+    ///
+    /// Por isso lemos os campos manualmente por NOME LOCAL do elemento
+    /// (ignorando o namespace) e tratamos o booleano de forma case-insensitive.
+    /// </summary>
+    private static ConsultaSelagemEnvio LerEnvio(string caminho)
     {
-        var ser = new XmlSerializer(typeof(T));
-        using var fs = File.OpenRead(caminho);
-        return (T)ser.Deserialize(fs)!;
+        var doc = new XmlDocument();
+        doc.Load(caminho);
+
+        string Pegar(string nomeLocal)
+        {
+            // Busca o elemento pelo nome local, independente do namespace.
+            var nós = doc.GetElementsByTagName(nomeLocal);
+            return nós.Count > 0 ? (nós[0]?.InnerText ?? "").Trim() : "";
+        }
+
+        bool PegarBool(string nomeLocal)
+        {
+            var v = Pegar(nomeLocal);
+            return v.Equals("true", StringComparison.OrdinalIgnoreCase)
+                || v.Equals("1", StringComparison.OrdinalIgnoreCase)
+                || v.Equals("sim", StringComparison.OrdinalIgnoreCase);
+        }
+
+        int PegarInt(string nomeLocal)
+        {
+            var v = Pegar(nomeLocal);
+            return int.TryParse(v, out var n) ? n : 0;
+        }
+
+        return new ConsultaSelagemEnvio
+        {
+            Operacao = PegarInt("Operacao"),
+            Url = Pegar("Url"),
+            Placa = Pegar("Placa"),
+            Renavam = Pegar("Renavam"),
+            Chassi = Pegar("Chassi"),
+            ConsultaGRU = PegarBool("ConsultaGRU"),
+            UrlConsultaGRU = Pegar("UrlConsultaGRU")
+        };
     }
 
     private static void Serializar<T>(T obj, string caminho)

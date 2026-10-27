@@ -35,6 +35,12 @@ public static class Program
     // Pedidos aguardando resposta da extensão: id -> arquivo de origem.
     private static readonly ConcurrentDictionary<string, PedidoPendente> Pendentes = new();
 
+    // Arquivos de envio em processamento (dedupe do watcher / sobrescritas).
+    // chave = caminho completo do arquivo em C:\sga\req; valor = quando começou.
+    // Se um pedido travar (extensão morreu, etc.), destravamos após este tempo.
+    private static readonly ConcurrentDictionary<string, DateTime> EmProcessamento = new();
+    private static readonly TimeSpan TempoMaxProcessamento = TimeSpan.FromSeconds(90);
+
     public static void Main()
     {
         Log.Info($"Native host iniciado. REQ={ReqDir} RESP={RespDir}");
@@ -90,7 +96,11 @@ public static class Program
             EnableRaisingEvents = true
         };
 
+        // O SGA grava sempre <USUARIO>.XML (ex.: ADM.XML). Dependendo de como
+        // ele escreve, o watcher pode disparar Created (arquivo novo) OU
+        // Changed (sobrescrita de um arquivo de mesmo nome). Tratamos os dois.
         watcher.Created += (_, e) => ProcessarEnvio(e.FullPath);
+        watcher.Changed += (_, e) => ProcessarEnvio(e.FullPath);
         // Mantém o watcher vivo pelo tempo de vida do processo.
         GC.KeepAlive(watcher);
     }
@@ -99,6 +109,25 @@ public static class Program
 
     private static void ProcessarEnvio(string caminho)
     {
+        // Como o nome é fixo por usuário (ADM.XML), o watcher pode disparar
+        // mais de uma vez para o mesmo arquivo (Created + Changed) e o SGA pode
+        // sobrescrevê-lo. Garante um único processamento por arquivo enquanto
+        // a consulta correspondente não terminar.
+        var agora = DateTime.UtcNow;
+        if (!EmProcessamento.TryAdd(caminho, agora))
+        {
+            // Já havia um processamento em curso. Só ignora se for recente;
+            // se ficou preso além do limite, destrava e reprocessa.
+            if (EmProcessamento.TryGetValue(caminho, out var inicio)
+                && agora - inicio < TempoMaxProcessamento)
+            {
+                Log.Info($"'{Path.GetFileName(caminho)}' já em processamento; ignorando disparo duplicado.");
+                return;
+            }
+            Log.Error($"'{Path.GetFileName(caminho)}' estava preso; destravando e reprocessando.");
+            EmProcessamento[caminho] = agora;
+        }
+
         ConsultaSelagemEnvio envio;
         try
         {
@@ -108,6 +137,7 @@ public static class Program
         catch (Exception ex)
         {
             Log.Error($"Falha ao ler envio '{caminho}': {ex.Message}");
+            EmProcessamento.TryRemove(caminho, out _);
             return;
         }
 
@@ -117,6 +147,7 @@ public static class Program
         if (envio.Operacao != 6)
         {
             Log.Info($"Operação {envio.Operacao} ainda não implementada. Ignorando por ora.");
+            EmProcessamento.TryRemove(caminho, out _);
             return;
         }
 
@@ -241,10 +272,12 @@ public static class Program
 
     private static void GravarResposta(ConsultaSelagemResposta resposta, PedidoPendente pendente)
     {
-        // Mantém o mesmo nome base do arquivo de origem (ex.: ENVIO123.xml ->
-        // RESP da mesma consulta). O SGA pode esperar isso; ajustável depois.
-        var nomeBase = Path.GetFileNameWithoutExtension(pendente.ArquivoOrigem);
-        var destino = Path.Combine(RespDir, $"{nomeBase}.xml");
+        // O SGA usa SEMPRE o mesmo nome por usuário nas duas pastas:
+        //   C:\sga\req\ADM.XML  ->  C:\sga\resp\ADM.XML
+        // Por isso o arquivo de resposta mantém EXATAMENTE o mesmo nome de
+        // arquivo do envio (inclusive a extensão, ex.: .XML maiúsculo).
+        var nomeArquivo = Path.GetFileName(pendente.ArquivoOrigem);
+        var destino = Path.Combine(RespDir, nomeArquivo);
 
         try
         {
@@ -257,6 +290,11 @@ public static class Program
         catch (Exception ex)
         {
             Log.Error($"Falha ao gravar resposta '{destino}': {ex.Message}");
+        }
+        finally
+        {
+            // Libera o arquivo para um próximo pedido do mesmo usuário.
+            EmProcessamento.TryRemove(pendente.ArquivoOrigem, out _);
         }
     }
 

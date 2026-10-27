@@ -41,6 +41,15 @@ public static class Program
     private static readonly ConcurrentDictionary<string, DateTime> EmProcessamento = new();
     private static readonly TimeSpan TempoMaxProcessamento = TimeSpan.FromSeconds(90);
 
+    // Fila de arquivos de envio a processar, UM DE CADA VEZ. A extensão só faz
+    // uma consulta por vez (mesma aba do Chrome), então serializamos aqui.
+    private static readonly BlockingCollection<string> FilaEnvios = new();
+
+    // Sincroniza a espera da resposta da extensão para o pedido atual.
+    private static readonly object RespostaLock = new();
+    private static ConsultaSelagemResposta? RespostaAtual;
+    private static ManualResetEventSlim? SinalResposta;
+
     public static void Main()
     {
         Log.Info($"Native host iniciado. REQ={ReqDir} RESP={RespDir}");
@@ -50,9 +59,13 @@ public static class Program
 
         IniciarWatcher();
 
-        // Processa arquivos que já estavam na pasta antes de abrir (fila pendente).
+        // Thread que consome a fila e processa um envio por vez.
+        var consumidora = new Thread(ConsumirFila) { IsBackground = true };
+        consumidora.Start();
+
+        // Enfileira arquivos que já estavam na pasta antes de abrir.
         foreach (var arquivo in Directory.GetFiles(ReqDir, "*.xml"))
-            ProcessarEnvio(arquivo);
+            EnfileirarEnvio(arquivo);
 
         // Loop de leitura das mensagens da extensão (bloqueante até o Chrome
         // fechar o stream).
@@ -99,25 +112,67 @@ public static class Program
         // O SGA grava sempre <USUARIO>.XML (ex.: ADM.XML). Dependendo de como
         // ele escreve, o watcher pode disparar Created (arquivo novo) OU
         // Changed (sobrescrita de um arquivo de mesmo nome). Tratamos os dois.
-        watcher.Created += (_, e) => ProcessarEnvio(e.FullPath);
-        watcher.Changed += (_, e) => ProcessarEnvio(e.FullPath);
+        watcher.Created += (_, e) => EnfileirarEnvio(e.FullPath);
+        watcher.Changed += (_, e) => EnfileirarEnvio(e.FullPath);
         // Mantém o watcher vivo pelo tempo de vida do processo.
         GC.KeepAlive(watcher);
     }
 
+    /// <summary>
+    /// Coloca um arquivo de envio na fila de processamento.
+    ///
+    /// Por que uma fila: a extensão só consegue fazer UMA consulta por vez
+    /// (usa a mesma aba do Chrome). Quando o SGA grava dois arquivos quase
+    /// juntos (ex.: ADM.xml e o temporário ADMTemp.xml), mandar os dois de uma
+    /// vez à extensão fazia um deles dar timeout. A fila garante processamento
+    /// sequencial: um pedido só começa quando o anterior termina.
+    ///
+    /// Também ignoramos arquivos temporários do SGA (ex.: *Temp.xml), que são
+    /// apenas rascunhos enquanto ele escreve o arquivo real.
+    /// </summary>
+    private static void EnfileirarEnvio(string caminho)
+    {
+        var nome = Path.GetFileNameWithoutExtension(caminho);
+
+        // Ignora o arquivo temporário do SGA (rascunho). O arquivo "oficial"
+        // é o <USUARIO>.xml (ex.: ADM.xml), não o <USUARIO>Temp.xml.
+        if (nome.EndsWith("Temp", StringComparison.OrdinalIgnoreCase))
+        {
+            Log.Info($"Ignorando arquivo temporário do SGA: {Path.GetFileName(caminho)}");
+            return;
+        }
+
+        FilaEnvios.Add(caminho);
+    }
+
+    // ---- Consumidor da fila: processa um envio de cada vez ------------------
+
+    private static void ConsumirFila()
+    {
+        foreach (var caminho in FilaEnvios.GetConsumingEnumerable())
+        {
+            try
+            {
+                ProcessarEnvio(caminho);
+            }
+            catch (Exception ex)
+            {
+                Log.Error($"Erro ao processar '{caminho}': {ex.Message}");
+            }
+        }
+    }
+
     // ---- Processa um arquivo de envio (C:\sga\req) --------------------------
+    // Roda na thread da fila. É BLOQUEANTE: envia o pedido à extensão e espera
+    // a resposta (ou timeout) antes de retornar, garantindo que o próximo item
+    // da fila só comece depois que este terminar.
 
     private static void ProcessarEnvio(string caminho)
     {
-        // Como o nome é fixo por usuário (ADM.XML), o watcher pode disparar
-        // mais de uma vez para o mesmo arquivo (Created + Changed) e o SGA pode
-        // sobrescrevê-lo. Garante um único processamento por arquivo enquanto
-        // a consulta correspondente não terminar.
+        // Dedupe: o watcher pode disparar Created + Changed para o mesmo arquivo.
         var agora = DateTime.UtcNow;
         if (!EmProcessamento.TryAdd(caminho, agora))
         {
-            // Já havia um processamento em curso. Só ignora se for recente;
-            // se ficou preso além do limite, destrava e reprocessa.
             if (EmProcessamento.TryGetValue(caminho, out var inicio)
                 && agora - inicio < TempoMaxProcessamento)
             {
@@ -128,46 +183,75 @@ public static class Program
             EmProcessamento[caminho] = agora;
         }
 
-        ConsultaSelagemEnvio envio;
         try
         {
-            EsperarArquivoLiberar(caminho);
-            envio = LerEnvio(caminho);
+            ConsultaSelagemEnvio envio;
+            try
+            {
+                EsperarArquivoLiberar(caminho);
+                envio = LerEnvio(caminho);
+            }
+            catch (Exception ex)
+            {
+                Log.Error($"Falha ao ler envio '{caminho}': {ex.Message}");
+                return;
+            }
+
+            Log.Info($"Envio lido: Operacao={envio.Operacao} Placa={envio.Placa} ({Path.GetFileName(caminho)})");
+
+            // Começamos só com a Operação 6 (consulta de selagem por placa).
+            if (envio.Operacao != 6)
+            {
+                Log.Info($"Operação {envio.Operacao} ainda não implementada. Ignorando por ora.");
+                return;
+            }
+
+            // Prepara a espera pela resposta ANTES de enviar o pedido.
+            var sinal = new ManualResetEventSlim(false);
+            lock (RespostaLock)
+            {
+                RespostaAtual = null;
+                SinalResposta = sinal;
+            }
+
+            var id = Guid.NewGuid().ToString("N");
+            Pendentes[id] = new PedidoPendente { ArquivoOrigem = caminho, Placa = envio.Placa };
+
+            NativeMessaging.WriteMessage(new
+            {
+                tipo = "consultar_selagem",
+                id,
+                placa = envio.Placa ?? "",
+                chassi = envio.Chassi ?? "",
+                renavam = envio.Renavam ?? ""
+            });
+            Log.Info($"Pedido {id} enviado à extensão (placa {envio.Placa}).");
+
+            // Espera a extensão responder (até 75s). Como estamos na thread da
+            // fila, o próximo arquivo só será processado depois daqui.
+            bool respondeu = sinal.Wait(TimeSpan.FromSeconds(75));
+
+            ConsultaSelagemResposta resposta;
+            lock (RespostaLock)
+            {
+                SinalResposta = null;
+                resposta = RespostaAtual ?? new ConsultaSelagemResposta
+                {
+                    Status = false,
+                    Message = "Tempo esgotado aguardando a resposta da consulta."
+                };
+            }
+
+            if (!respondeu)
+                Log.Error($"Pedido {id} expirou sem resposta da extensão.");
+
+            Pendentes.TryRemove(id, out _);
+            GravarResposta(resposta, new PedidoPendente { ArquivoOrigem = caminho, Placa = envio.Placa ?? "" });
         }
-        catch (Exception ex)
+        finally
         {
-            Log.Error($"Falha ao ler envio '{caminho}': {ex.Message}");
             EmProcessamento.TryRemove(caminho, out _);
-            return;
         }
-
-        Log.Info($"Envio lido: Operacao={envio.Operacao} Placa={envio.Placa} ({Path.GetFileName(caminho)})");
-
-        // Começamos só com a Operação 6 (consulta de selagem por placa).
-        if (envio.Operacao != 6)
-        {
-            Log.Info($"Operação {envio.Operacao} ainda não implementada. Ignorando por ora.");
-            EmProcessamento.TryRemove(caminho, out _);
-            return;
-        }
-
-        var id = Guid.NewGuid().ToString("N");
-        Pendentes[id] = new PedidoPendente
-        {
-            ArquivoOrigem = caminho,
-            Placa = envio.Placa
-        };
-
-        NativeMessaging.WriteMessage(new
-        {
-            tipo = "consultar_selagem",
-            id,
-            placa = envio.Placa ?? "",
-            chassi = envio.Chassi ?? "",
-            renavam = envio.Renavam ?? ""
-        });
-
-        Log.Info($"Pedido {id} enviado à extensão (placa {envio.Placa}).");
     }
 
     // ---- Trata a resposta da extensão --------------------------------------
@@ -186,9 +270,9 @@ public static class Program
         if (tipo != "resultado_selagem") return;
 
         var id = msg.GetProperty("id").GetString() ?? "";
-        if (!Pendentes.TryRemove(id, out var pendente))
+        if (!Pendentes.ContainsKey(id))
         {
-            Log.Error($"Resultado recebido para id desconhecido: {id}");
+            Log.Error($"Resultado recebido para id desconhecido/expirado: {id}");
             return;
         }
 
@@ -204,7 +288,13 @@ public static class Program
         if (status && msg.TryGetProperty("dados", out var dados) && dados.ValueKind == JsonValueKind.Object)
             PreencherDados(resposta, dados);
 
-        GravarResposta(resposta, pendente);
+        // Entrega a resposta para a thread da fila (que está esperando) e a
+        // acorda. A gravação do XML é feita lá, de forma sequencial.
+        lock (RespostaLock)
+        {
+            RespostaAtual = resposta;
+            SinalResposta?.Set();
+        }
     }
 
     private static void PreencherDados(ConsultaSelagemResposta r, JsonElement d)
@@ -291,11 +381,7 @@ public static class Program
         {
             Log.Error($"Falha ao gravar resposta '{destino}': {ex.Message}");
         }
-        finally
-        {
-            // Libera o arquivo para um próximo pedido do mesmo usuário.
-            EmProcessamento.TryRemove(pendente.ArquivoOrigem, out _);
-        }
+        // (O EmProcessamento é liberado no finally de ProcessarEnvio.)
     }
 
     // ---- Serialização XML ---------------------------------------------------

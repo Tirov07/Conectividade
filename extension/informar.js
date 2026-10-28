@@ -196,6 +196,43 @@
     if (radio) CC.marcar(radio, true);
   }
 
+  // ---- Leitura do resultado após o envio ----------------------------------
+
+  /**
+   * Após enviar a selagem, o site responde de três formas:
+   *  - ERRO:    div.alert.alert-error com um <h4> e um <ul><li> detalhando.
+   *  - SUCESSO: (a confirmar com o XML de retorno de sucesso do cliente)
+   *             normalmente uma mensagem de confirmação / protocolo gerado.
+   *  - Se ainda estiver na tela de preenchimento, o envio não concluiu.
+   *
+   * Retorna { pronto, status, message } — pronto=false se a página ainda não
+   * trouxe um desfecho (deve aguardar).
+   */
+  function lerResultadoEnvio() {
+    // Caso de ERRO.
+    const erro = document.querySelector(".alert.alert-error, .alert-error");
+    if (erro) {
+      // A mensagem específica fica no <li> (dentro de ul.nav); o <h4> é o
+      // título genérico ("Não foi possível informar a selagem.").
+      const li = erro.querySelector("ul li");
+      const h4 = erro.querySelector(".alert-heading, h4");
+      const detalhe = li ? CC.limpar(li.textContent) : "";
+      const titulo = h4 ? CC.limpar(h4.textContent) : "";
+      const msg = detalhe || titulo || "Não foi possível informar a selagem.";
+      return { pronto: true, status: false, message: msg };
+    }
+
+    // Caso de SUCESSO — detecção provisória até termos o XML de retorno de
+    // sucesso do cliente. Procuramos um alerta de sucesso/confirmação.
+    const ok = document.querySelector(".alert.alert-success, .alert-success");
+    if (ok) {
+      return { pronto: true, status: true, message: CC.limpar(ok.textContent) };
+    }
+
+    // Ainda sem desfecho visível.
+    return { pronto: false };
+  }
+
   // ---- Finalização --------------------------------------------------------
 
   function finalizar(estado, resultado) {
@@ -227,6 +264,16 @@
     }
 
     try {
+      // Após o envio (automático): lê o desfecho (erro/sucesso) e finaliza.
+      if (estado.etapa === "aguardando_resultado") {
+        const r = lerResultadoEnvio();
+        if (r.pronto) {
+          finalizar(estado, { status: r.status, message: r.message });
+        }
+        // se não está pronto, aguarda a próxima carga de página.
+        return;
+      }
+
       if (estado.etapa === "preencher" && ehPaginaPreenchimento()) {
         await preencher(estado);
         return;

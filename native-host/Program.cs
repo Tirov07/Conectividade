@@ -412,12 +412,31 @@ public static class Program
         Pendentes.TryRemove(id, out _);
         if (!respondeu) Log.Error($"Op.3 pedido {id} expirou sem resposta da extensão.");
 
-        // TODO: o XML de RETORNO da Op.3 ainda será definido pelo cliente.
-        // Por ora gravamos uma resposta mínima (STATUS + Message) para não
-        // deixar o SGA sem retorno; o formato exato será ajustado quando o
-        // cliente enviar o exemplo do arquivo de retorno.
-        var resposta = new ConsultaSelagemResposta { Status = r.Status, Message = r.Message };
-        GravarResposta(resposta, new PedidoPendente { ArquivoOrigem = caminho, Placa = envio.Veiculo.Placa ?? "" });
+        // Retorno no formato InformarSelagemResposta (confirmado pelo exemplo
+        // de erro real). A Message sai em MAIÚSCULAS, como o SGA espera.
+        // (O retorno de SUCESSO com protocolo será calibrado quando o cliente
+        //  enviar o exemplo; a estrutura STATUS + Message já cobre o erro.)
+        var resposta = new InformarSelagemResposta
+        {
+            Status = r.Status,
+            Message = (r.Message ?? "").ToUpperInvariant()
+        };
+        GravarRespostaInformar(resposta, caminho);
+    }
+
+    private static void GravarRespostaInformar(InformarSelagemResposta resposta, string caminhoOrigem)
+    {
+        var destino = Path.Combine(RespDir, Path.GetFileName(caminhoOrigem));
+        try
+        {
+            SerializarXml(typeof(InformarSelagemResposta), resposta, destino);
+            Log.Info($"Resposta Op.3 gravada: {destino} (STATUS={resposta.Status} | {resposta.Message})");
+            try { File.Delete(caminhoOrigem); } catch { /* best-effort */ }
+        }
+        catch (Exception ex)
+        {
+            Log.Error($"Falha ao gravar resposta Op.3 '{destino}': {ex.Message}");
+        }
     }
 
     /// <summary>

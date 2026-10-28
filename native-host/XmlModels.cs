@@ -343,3 +343,24 @@ public class InformarSelagemDto
     [XmlElement("SelosPlasticos")] public string SelosPlasticos { get; set; } = "";
     [XmlElement("SeloPlasticoCaixaSensor")] public string SeloPlasticoCaixaSensor { get; set; } = "";
 }
+
+// ---- RETORNO da Op. 3 (C:\sga\resp) ---------------------------------------
+// Confirmado por exemplo real de ERRO (GRU já utilizada). O retorno de SUCESSO
+// (com protocolo?) ainda será enviado pelo cliente para calibrar os campos.
+
+[XmlRoot("InformarSelagemResposta", Namespace = "www.canainfo.com.br")]
+public class InformarSelagemResposta
+{
+    [XmlIgnore]
+    public bool Status { get; set; }
+
+    [XmlElement("STATUS")]
+    public string StatusTexto
+    {
+        get => Status ? "True" : "False";
+        set => Status = value?.Trim().Equals("true", StringComparison.OrdinalIgnoreCase) ?? false;
+    }
+
+    [XmlElement("Message")]
+    public string Message { get; set; } = "";
+}

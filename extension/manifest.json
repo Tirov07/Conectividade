@@ -18,7 +18,7 @@
   "content_scripts": [
     {
       "matches": ["https://cronotacografo.rbmlq.gov.br/*"],
-      "js": ["content.js"],
+      "js": ["util.js", "content.js", "informar.js"],
       "run_at": "document_idle"
     }
   ],

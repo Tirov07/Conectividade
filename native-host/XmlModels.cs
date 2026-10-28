@@ -284,3 +284,62 @@ public class Certificado2Dto
     [XmlElement("ValidadeDocto2")] public string ValidadeDocto2 { get; set; } = "";
     [XmlElement("Tipo2")] public string Tipo2 { get; set; } = "";
 }
+
+// ===========================================================================
+// OPERAÇÃO 3 — INFORMAR SELAGEM (ESCRITA)
+// ===========================================================================
+// Grava uma selagem oficial no Inmetro e consome uma GRU real. Por isso o
+// preenchimento é feito com MUITO cuidado e, no começo, SEM clicar em "Enviar"
+// (modo seguro). Fluxo na tela /selagens/informar:
+//   Etapa 1: buscar o veículo (placa/renavam/chassi/GRU)
+//   Etapa 2: preencher marca -> modelo -> nº série (cada um dispara AJAX e
+//            recarrega o form), depois ConstK, TipoRegistro, Escala, Ano, PAM,
+//            selos (plásticos/adesivos com tipo+número), radio do selo da
+//            caixa/sensor, velocidade e o atesto; então Enviar.
+
+[XmlRoot("InformarSelagemEnvio", Namespace = "www.canainfo.com.br")]
+public class InformarSelagemEnvio
+{
+    [XmlElement("Operacao")] public int Operacao { get; set; }
+    [XmlElement("Url")] public string Url { get; set; } = "";
+    [XmlElement("UrlConsulta")] public string UrlConsulta { get; set; } = "";
+    [XmlElement("TipoPosto")] public string TipoPosto { get; set; } = "";
+    [XmlElement("UrlDownload")] public string UrlDownload { get; set; } = "";
+
+    [XmlElement("Equipamento")] public InformarEquipamentoDto Equipamento { get; set; } = new();
+    [XmlElement("Veiculo")] public InformarVeiculoDto Veiculo { get; set; } = new();
+    [XmlElement("Selagem")] public InformarSelagemDto Selagem { get; set; } = new();
+}
+
+public class InformarEquipamentoDto
+{
+    [XmlElement("NroSerie")] public string NroSerie { get; set; } = "";
+    [XmlElement("Marca")] public string Marca { get; set; } = "";
+    [XmlElement("Modelo")] public string Modelo { get; set; } = "";
+    [XmlElement("Redutor")] public string Redutor { get; set; } = "";
+    [XmlElement("ConstK")] public string ConstK { get; set; } = "";
+    [XmlElement("TipoRegistro")] public string TipoRegistro { get; set; } = "";
+    [XmlElement("EscalaVelocidade")] public string EscalaVelocidade { get; set; } = "";
+    [XmlElement("AnoInstrumento")] public string AnoInstrumento { get; set; } = "";
+    [XmlElement("PAM")] public string PAM { get; set; } = "";
+}
+
+public class InformarVeiculoDto
+{
+    [XmlElement("Placa")] public string Placa { get; set; } = "";
+    [XmlElement("Renavam")] public string Renavam { get; set; } = "";
+    [XmlElement("Chassi")] public string Chassi { get; set; } = "";
+    [XmlElement("Pneu")] public string Pneu { get; set; } = "";
+    [XmlElement("Aro")] public string Aro { get; set; } = "";
+}
+
+public class InformarSelagemDto
+{
+    [XmlElement("GRUSelagem")] public string GRUSelagem { get; set; } = "";
+    [XmlElement("Velocidade")] public string Velocidade { get; set; } = "";
+    // Selos vêm como listas separadas por espaços, cada selo = tipo(3)+numero.
+    // Ex.: "180H012259785  180H012259798" -> dois adesivos.
+    [XmlElement("SelosAdesivos")] public string SelosAdesivos { get; set; } = "";
+    [XmlElement("SelosPlasticos")] public string SelosPlasticos { get; set; } = "";
+    [XmlElement("SeloPlasticoCaixaSensor")] public string SeloPlasticoCaixaSensor { get; set; } = "";
+}

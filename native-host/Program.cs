@@ -240,6 +240,10 @@ public static class Program
             {
                 ProcessarLote(caminho);
             }
+            else if (rootTag == "InformarSelagemEnvio" || operacao == 3)
+            {
+                ProcessarInformarSelagem(caminho);
+            }
             else if (rootTag == "ConsultaSelagemEnvio" || operacao == 6)
             {
                 ProcessarSelagem(caminho);
@@ -334,6 +338,173 @@ public static class Program
         GravarResposta(resposta, new PedidoPendente { ArquivoOrigem = caminho, Placa = envio.Placa ?? "" });
     }
 
+    // ---- Operação 3: informar selagem (ESCRITA) -----------------------------
+
+    private static void ProcessarInformarSelagem(string caminho)
+    {
+        var envio = LerInformarSelagem(caminho);
+        Log.Info($"Op.3 Informar Selagem | Placa={envio.Veiculo.Placa} GRU={envio.Selagem.GRUSelagem} " +
+                 $"Instr={envio.Equipamento.Marca}/{envio.Equipamento.Modelo} ({Path.GetFileName(caminho)})");
+
+        // Separa os selos (cada selo = 3 dígitos de tipo + número) para a
+        // extensão receber já estruturado e só preencher os campos.
+        var plasticos = SepararSelos(envio.Selagem.SelosPlasticos);
+        var adesivos = SepararSelos(envio.Selagem.SelosAdesivos);
+
+        // Monta o pedido à extensão. A extensão preenche a tela e (por ora, em
+        // modo seguro) PARA antes de enviar — veja ENVIAR_AUTOMATICO no content.js.
+        var sinal = new ManualResetEventSlim(false);
+        lock (RespostaLock)
+        {
+            RespostaBrutaAtual = null;
+            SinalResposta = sinal;
+        }
+
+        var id = Guid.NewGuid().ToString("N");
+        Pendentes[id] = new PedidoPendente { ArquivoOrigem = caminho, Placa = envio.Veiculo.Placa };
+
+        NativeMessaging.WriteMessage(new
+        {
+            tipo = "informar_selagem",
+            id,
+            veiculo = new
+            {
+                placa = envio.Veiculo.Placa,
+                renavam = envio.Veiculo.Renavam,
+                chassi = envio.Veiculo.Chassi,
+                pneu = envio.Veiculo.Pneu,
+                aro = envio.Veiculo.Aro
+            },
+            equipamento = new
+            {
+                nroSerie = envio.Equipamento.NroSerie,
+                marca = envio.Equipamento.Marca,
+                modelo = envio.Equipamento.Modelo,
+                constK = envio.Equipamento.ConstK,
+                tipoRegistro = envio.Equipamento.TipoRegistro,
+                escalaVelocidade = envio.Equipamento.EscalaVelocidade,
+                anoInstrumento = AnoValidoOuVazio(envio.Equipamento.AnoInstrumento),
+                pam = envio.Equipamento.PAM
+            },
+            selagem = new
+            {
+                gru = envio.Selagem.GRUSelagem,
+                velocidade = envio.Selagem.Velocidade,
+                selosPlasticos = plasticos,
+                selosAdesivos = adesivos,
+                seloPlasticoCaixaSensor = (envio.Selagem.SeloPlasticoCaixaSensor ?? "").Trim()
+            }
+        });
+        Log.Info($"Op.3 pedido {id} enviado à extensão (plásticos={plasticos.Count}, adesivos={adesivos.Count}).");
+
+        bool respondeu = sinal.Wait(TimeSpan.FromSeconds(120));
+
+        ResultadoConsulta r;
+        lock (RespostaLock)
+        {
+            SinalResposta = null;
+            r = RespostaBrutaAtual ?? new ResultadoConsulta
+            {
+                Status = false,
+                Message = "Tempo esgotado aguardando a resposta da informação de selagem."
+            };
+        }
+        Pendentes.TryRemove(id, out _);
+        if (!respondeu) Log.Error($"Op.3 pedido {id} expirou sem resposta da extensão.");
+
+        // TODO: o XML de RETORNO da Op.3 ainda será definido pelo cliente.
+        // Por ora gravamos uma resposta mínima (STATUS + Message) para não
+        // deixar o SGA sem retorno; o formato exato será ajustado quando o
+        // cliente enviar o exemplo do arquivo de retorno.
+        var resposta = new ConsultaSelagemResposta { Status = r.Status, Message = r.Message };
+        GravarResposta(resposta, new PedidoPendente { ArquivoOrigem = caminho, Placa = envio.Veiculo.Placa ?? "" });
+    }
+
+    /// <summary>
+    /// Lê o XML InformarSelagemEnvio de forma tolerante ao formato legado do SGA.
+    /// </summary>
+    private static InformarSelagemEnvio LerInformarSelagem(string caminho)
+    {
+        var doc = new XmlDocument();
+        doc.Load(caminho);
+
+        string P(string nomeLocal)
+        {
+            var ns = doc.GetElementsByTagName(nomeLocal);
+            return ns.Count > 0 ? (ns[0]?.InnerText ?? "").Trim() : "";
+        }
+
+        return new InformarSelagemEnvio
+        {
+            Operacao = 3,
+            Url = P("Url"),
+            TipoPosto = P("TipoPosto"),
+            Equipamento =
+            {
+                NroSerie = P("NroSerie"),
+                Marca = P("Marca"),
+                Modelo = P("Modelo"),
+                Redutor = P("Redutor"),
+                ConstK = P("ConstK"),
+                TipoRegistro = P("TipoRegistro"),
+                EscalaVelocidade = P("EscalaVelocidade"),
+                AnoInstrumento = P("AnoInstrumento"),
+                PAM = P("PAM")
+            },
+            Veiculo =
+            {
+                Placa = P("Placa"),
+                Renavam = P("Renavam"),
+                Chassi = P("Chassi"),
+                Pneu = P("Pneu"),
+                Aro = P("Aro")
+            },
+            Selagem =
+            {
+                GRUSelagem = P("GRUSelagem"),
+                Velocidade = P("Velocidade"),
+                SelosAdesivos = P("SelosAdesivos"),
+                SelosPlasticos = P("SelosPlasticos"),
+                SeloPlasticoCaixaSensor = P("SeloPlasticoCaixaSensor")
+            }
+        };
+    }
+
+    /// <summary>
+    /// Separa uma lista de selos (ex.: "181K044803546  180H012259785") em
+    /// itens { tipo, numero }. Regra confirmada pelo cliente: os 3 primeiros
+    /// dígitos são o VALUE do select de tipo, e o resto é o número do selo.
+    /// </summary>
+    private static List<object> SepararSelos(string lista)
+    {
+        var resultado = new List<object>();
+        if (string.IsNullOrWhiteSpace(lista)) return resultado;
+
+        var itens = lista.Split(new[] { ' ', '\t', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+        foreach (var item in itens)
+        {
+            var t = item.Trim();
+            if (t.Length <= 3) continue; // sem número após o tipo; ignora
+            var tipo = t.Substring(0, 3);
+            var numero = t.Substring(3);
+            resultado.Add(new { tipo, numero });
+        }
+        return resultado;
+    }
+
+    /// <summary>
+    /// O SGA às vezes envia um ano "codificado" inválido (ex.: 999). O cliente
+    /// corrige na origem, mas por segurança: só repassa o ano se for um ano
+    /// plausível de 4 dígitos; caso contrário manda vazio (não preenche o campo).
+    /// </summary>
+    private static string AnoValidoOuVazio(string ano)
+    {
+        var a = (ano ?? "").Trim();
+        if (a.Length == 4 && int.TryParse(a, out var n) && n >= 1960 && n <= DateTime.Now.Year + 1)
+            return a;
+        return "";
+    }
+
     // ---- Operação 13: consulta de lote de placas ----------------------------
 
     private static void ProcessarLote(string caminho)
@@ -402,7 +573,10 @@ public static class Program
             return;
         }
 
-        if (tipo != "resultado_selagem") return;
+        // Aceita o resultado tanto das consultas (resultado_selagem) quanto da
+        // informação de selagem (resultado_informar) — o canal de resposta é o
+        // mesmo (sinaliza a thread que está esperando).
+        if (tipo != "resultado_selagem" && tipo != "resultado_informar") return;
 
         var id = msg.GetProperty("id").GetString() ?? "";
         if (!Pendentes.ContainsKey(id))

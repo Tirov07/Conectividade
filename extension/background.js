@@ -73,6 +73,12 @@ async function onMensagemDoHost(msg) {
     return;
   }
 
+  if (msg.tipo === "informar_selagem") {
+    const resultado = await informarSelagem(msg);
+    responderHost({ tipo: "resultado_informar", id: msg.id, ...resultado });
+    return;
+  }
+
   if (msg.tipo === "progresso_lote") {
     atualizarProgressoLote(msg);
     return;
@@ -81,6 +87,46 @@ async function onMensagemDoHost(msg) {
   if (msg.tipo === "ping") {
     responderHost({ tipo: "pong" });
     return;
+  }
+}
+
+/**
+ * Orquestra a operação 3 (informar selagem). Igual à consulta, atravessa
+ * recarregamentos de página; a resposta volta via runtime.sendMessage do
+ * informar.js com o id da operação.
+ */
+async function informarSelagem(pedido) {
+  try {
+    const aba = await garantirAbaCronotacografo();
+
+    const resultado = await new Promise((resolve, reject) => {
+      const idConsulta = `i-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+      // Informar selagem pode demorar (3 AJAX encadeados + preenchimento).
+      const timeout = setTimeout(() => {
+        pendentes.delete(idConsulta);
+        reject(new Error("Tempo esgotado ao informar a selagem."));
+      }, 115000);
+
+      pendentes.set(idConsulta, { resolve, timeout });
+
+      enviarParaContentScript(aba.id, {
+        acao: "informar_selagem",
+        idConsulta,
+        veiculo: pedido.veiculo,
+        equipamento: pedido.equipamento,
+        selagem: pedido.selagem
+      }).catch((e) => {
+        clearTimeout(timeout);
+        pendentes.delete(idConsulta);
+        reject(e);
+      });
+    });
+
+    return resultado;
+  } catch (e) {
+    log("Erro ao informar selagem:", e.message);
+    return { status: false, message: `Erro ao informar selagem: ${e.message}` };
   }
 }
 

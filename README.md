@@ -109,12 +109,21 @@ Conectividade/
 
 ### 1. Compilar o native host (.exe único)
 
+**Jeito fácil:** dê um duplo-clique em `native-host\gerar-exe.bat`. Ele compila,
+mostra onde o `.exe` ficou e pergunta se quer copiá-lo para
+`C:\sga\conectividade\` automaticamente.
+
+**Na mão (equivalente):**
+
 ```powershell
 cd native-host
 dotnet publish -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true
 ```
 
-Copie o `ConectividadeHost.exe` gerado para `C:\sga\conectividade\`.
+O `.exe` sai em
+`native-host\bin\Release\net8.0-windows\win-x64\publish\ConectividadeHost.exe`.
+Copie-o para `C:\sga\conectividade\` e **recarregue a extensão** em
+`chrome://extensions` (isso reinicia o host com a versão nova).
 
 ### 2. Instalar a extensão
 

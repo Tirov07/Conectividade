@@ -721,36 +721,72 @@ public static class Program
     }
 
     private static void SerializarLote(ConsultaLotePlacasResposta obj, string caminho)
+        => SerializarXml(typeof(ConsultaLotePlacasResposta), obj!, caminho);
+
+    private static void Serializar<T>(T obj, string caminho)
+        => SerializarXml(typeof(T), obj!, caminho);
+
+    /// <summary>
+    /// Serializa um objeto em XML no formato que o SGA espera:
+    ///   - namespace padrão "www.canainfo.com.br" (sem prefixo);
+    ///   - campos vazios como &lt;Campo&gt;&lt;/Campo&gt; (tag aberta/fechada),
+    ///     NÃO como &lt;Campo /&gt; (self-closing). O XmlWriter padrão do .NET
+    ///     gera self-closing; o FullEndElementWriter força o formato completo.
+    ///   - escrita atômica (.tmp + rename) para o SGA nunca ler pela metade.
+    /// </summary>
+    private static void SerializarXml(Type tipo, object obj, string caminho)
     {
-        var ser = new XmlSerializer(typeof(ConsultaLotePlacasResposta));
+        var ser = new XmlSerializer(tipo);
         var settings = new XmlWriterSettings { Indent = true, Encoding = new System.Text.UTF8Encoding(false) };
         var ns = new XmlSerializerNamespaces();
         ns.Add("", "www.canainfo.com.br");
 
         var tmp = caminho + ".tmp";
-        using (var writer = XmlWriter.Create(tmp, settings))
+        using (var inner = XmlWriter.Create(tmp, settings))
+        using (var writer = new FullEndElementWriter(inner))
             ser.Serialize(writer, obj, ns);
 
         if (File.Exists(caminho)) File.Delete(caminho);
         File.Move(tmp, caminho);
     }
 
-    private static void Serializar<T>(T obj, string caminho)
+    /// <summary>
+    /// XmlWriter que transforma todo WriteEndElement em WriteFullEndElement,
+    /// fazendo elementos vazios saírem como &lt;Tag&gt;&lt;/Tag&gt; em vez de
+    /// &lt;Tag /&gt; — formato que o SGA usa/espera.
+    /// </summary>
+    private sealed class FullEndElementWriter : XmlWriter
     {
-        var ser = new XmlSerializer(typeof(T));
-        var settings = new XmlWriterSettings { Indent = true, Encoding = new System.Text.UTF8Encoding(false) };
+        private readonly XmlWriter _w;
+        public FullEndElementWriter(XmlWriter inner) => _w = inner;
 
-        // Namespace padrão "www.canainfo.com.br" sem prefixo (igual ao exemplo).
-        var ns = new XmlSerializerNamespaces();
-        ns.Add("", "www.canainfo.com.br");
+        public override void WriteEndElement() => _w.WriteFullEndElement();
 
-        var tmp = caminho + ".tmp";
-        using (var writer = XmlWriter.Create(tmp, settings))
-            ser.Serialize(writer, obj, ns);
-
-        // Escrita atômica: grava .tmp e renomeia, pra o SGA nunca ler pela metade.
-        if (File.Exists(caminho)) File.Delete(caminho);
-        File.Move(tmp, caminho);
+        // Demais membros apenas delegam para o writer interno.
+        public override void WriteFullEndElement() => _w.WriteFullEndElement();
+        public override void WriteStartElement(string? prefix, string localName, string? ns) => _w.WriteStartElement(prefix, localName, ns);
+        public override void WriteStartDocument() => _w.WriteStartDocument();
+        public override void WriteStartDocument(bool standalone) => _w.WriteStartDocument(standalone);
+        public override void WriteEndDocument() => _w.WriteEndDocument();
+        public override void WriteString(string? text) => _w.WriteString(text);
+        public override void WriteStartAttribute(string? prefix, string localName, string? ns) => _w.WriteStartAttribute(prefix, localName, ns);
+        public override void WriteEndAttribute() => _w.WriteEndAttribute();
+        public override void WriteCData(string? text) => _w.WriteCData(text);
+        public override void WriteComment(string? text) => _w.WriteComment(text);
+        public override void WriteProcessingInstruction(string name, string? text) => _w.WriteProcessingInstruction(name, text);
+        public override void WriteEntityRef(string name) => _w.WriteEntityRef(name);
+        public override void WriteCharEntity(char ch) => _w.WriteCharEntity(ch);
+        public override void WriteWhitespace(string? ws) => _w.WriteWhitespace(ws);
+        public override void WriteChars(char[] buffer, int index, int count) => _w.WriteChars(buffer, index, count);
+        public override void WriteRaw(char[] buffer, int index, int count) => _w.WriteRaw(buffer, index, count);
+        public override void WriteRaw(string data) => _w.WriteRaw(data);
+        public override void WriteSurrogateCharEntity(char lowChar, char highChar) => _w.WriteSurrogateCharEntity(lowChar, highChar);
+        public override void WriteBase64(byte[] buffer, int index, int count) => _w.WriteBase64(buffer, index, count);
+        public override void WriteDocType(string name, string? pubid, string? sysid, string? subset) => _w.WriteDocType(name, pubid, sysid, subset);
+        public override string? LookupPrefix(string ns) => _w.LookupPrefix(ns);
+        public override WriteState WriteState => _w.WriteState;
+        public override void Flush() => _w.Flush();
+        public override void Close() => _w.Close();
     }
 
     private static void EsperarArquivoLiberar(string caminho, int tentativas = 20)

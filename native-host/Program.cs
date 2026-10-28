@@ -413,6 +413,14 @@ public static class Program
 
         var status = msg.TryGetProperty("status", out var st) && st.GetBoolean();
         var message = msg.TryGetProperty("message", out var mm) ? mm.GetString() ?? "" : "";
+        var naoEncontrado = msg.TryGetProperty("naoEncontrado", out var ne) && ne.ValueKind == JsonValueKind.True;
+
+        // Quando o site respondeu "Nenhum resultado encontrado.", padronizamos a
+        // Message no formato EXATO que o SGA espera (texto em maiúsculas, com o
+        // "×" do botão fechar e a quebra de linha), independente de variações
+        // de capitalização da página.
+        if (naoEncontrado)
+            message = "×\nNENHUM RESULTADO ENCONTRADO.";
 
         var resultado = new ResultadoConsulta { Status = status, Message = message };
         if (status && msg.TryGetProperty("dados", out var dados) && dados.ValueKind == JsonValueKind.Object)

@@ -68,6 +68,7 @@ async function onMensagemDoHost(msg) {
   if (msg.tipo === "consultar_selagem") {
     const resultado = await consultarSelagem(msg);
     // Devolve pro host casar com o id do pedido e montar o RETORNO.xml.
+    // (resultado traz status, dados?, message e naoEncontrado)
     responderHost({ tipo: "resultado_selagem", id: msg.id, ...resultado });
     return;
   }
@@ -242,7 +243,8 @@ chrome.runtime.onMessage.addListener((msg) => {
       pend.resolve({
         status: !!msg.status,
         dados: msg.dados,
-        message: msg.message || ""
+        message: msg.message || "",
+        naoEncontrado: !!msg.naoEncontrado
       });
     }
   }

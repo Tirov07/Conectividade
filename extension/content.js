@@ -123,12 +123,34 @@
   }
 
   /**
+   * Após submeter a busca, o site pode responder com um alerta
+   * "Nenhum resultado encontrado." (div.alert) e SEM a tabela de resultados.
+   * Retorna o texto literal do alerta (como o SGA espera no Message), ou null
+   * se não houver esse alerta.
+   */
+  function textoAlertaSemResultado() {
+    const alerta = document.querySelector(".alert .alert-heading, .alert-heading");
+    if (!alerta) return null;
+
+    const txt = limpar(alerta.textContent);
+    // Só tratamos como "sem resultado" se a mensagem for a esperada.
+    if (/nenhum resultado encontrado/i.test(txt)) {
+      // O SGA espera o texto do .alert inteiro (inclui o "×" do botão fechar).
+      const caixa = alerta.closest(".alert") || alerta;
+      return (caixa.textContent || txt).replace(/\s+\n/g, "\n").trim();
+    }
+    return null;
+  }
+
+  /**
    * Lê a tabela de resultados. Retorna a lista de linhas e o link "ver" da
    * primeira (mais recente). Também captura dados que só existem na lista
    * (protocolo, selos) para completar o retorno.
    */
   function lerResultados() {
     const tabela = document.querySelector("table.table-list-resultados");
+    if (!tabela) return { encontrou: false }; // defesa: sem tabela na página
+
     const linhas = [...tabela.querySelectorAll("tr")].filter(
       (tr) => tr.querySelectorAll("td").length > 0
     );
@@ -280,8 +302,27 @@
         return;
       }
 
-      // Etapa 2 — resultados
-      if (ehPaginaResultados() && estado.etapa === "resultados") {
+      // Etapa 2 — resultados (ou tela de "nenhum resultado")
+      if (estado.etapa === "resultados") {
+        // Caso 1: o site respondeu "Nenhum resultado encontrado." (sem tabela).
+        const semResultado = textoAlertaSemResultado();
+        if (semResultado) {
+          // Sinaliza explicitamente "não encontrado". O host padroniza a
+          // Message no formato que o SGA espera (texto em maiúsculas).
+          finalizar(estado, {
+            status: false,
+            naoEncontrado: true,
+            message: semResultado
+          });
+          return;
+        }
+
+        // Caso 2: não tem tabela nem alerta conhecido — página inesperada.
+        // Aguarda (pode ainda estar carregando); não finaliza aqui.
+        if (!ehPaginaResultados()) {
+          return;
+        }
+
         const r = lerResultados();
         if (!r.encontrou) {
           finalizar(estado, {

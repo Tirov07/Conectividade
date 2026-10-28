@@ -108,23 +108,9 @@ async function atualizarProgressoLote(msg) {
     log("Falha ao atualizar badge:", e.message);
   }
 
-  // 2) Overlay flutuante nas abas do Cronotacógrafo.
-  try {
-    const abas = await chrome.tabs.query({ url: `${BASE_URL}/*` });
-    for (const aba of abas) {
-      chrome.tabs
-        .sendMessage(aba.id, {
-          acao: "progresso_lote",
-          atual,
-          total,
-          placa,
-          concluido
-        })
-        .catch(() => {}); // aba pode não ter content.js ainda; ignora
-    }
-  } catch (e) {
-    log("Falha ao enviar progresso às abas:", e.message);
-  }
+  // O progresso detalhado é exibido no POPUP da extensão (janelinha do ícone),
+  // que consulta `ultimoProgressoLote` via __pedir_progresso_lote. Não usamos
+  // mais overlay flutuante na página.
 }
 
 /**

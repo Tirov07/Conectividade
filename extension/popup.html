@@ -10,6 +10,15 @@
     .dot.ok { background: #2ecc71; }
     .dot.off { background: #e74c3c; }
     .hint { font-size: 11px; color: #666; margin-top: 10px; line-height: 1.4; }
+
+    /* Bloco de progresso do lote: só aparece quando há um lote em andamento. */
+    #lote { display: none; margin-top: 12px; padding-top: 12px; border-top: 1px solid #eee; }
+    #lote.ativo { display: block; }
+    #lote .titulo { font-size: 12px; font-weight: 600; margin-bottom: 6px; }
+    #lote .texto { font-size: 13px; margin-bottom: 8px; }
+    #lote .placa { color: #666; }
+    #lote .barra { background: #e5e7eb; border-radius: 6px; height: 10px; overflow: hidden; }
+    #lote .barra-cheia { background: #22dd77; height: 100%; width: 0%; transition: width .3s; }
   </style>
 </head>
 <body>
@@ -22,6 +31,16 @@
     <span id="dot-login" class="dot"></span>
     <span>Sessão do Cronotacógrafo</span>
   </div>
+
+  <div id="lote">
+    <div class="titulo">Consulta em lote</div>
+    <div class="texto">
+      <span id="lote-contagem">0/0</span>
+      <span id="lote-placa" class="placa"></span>
+    </div>
+    <div class="barra"><div id="lote-barra" class="barra-cheia"></div></div>
+  </div>
+
   <div class="hint">
     Faça o login manualmente no site do Cronotacógrafo. As consultas de placa
     serão feitas automaticamente nesta aba, sem abrir outro navegador.

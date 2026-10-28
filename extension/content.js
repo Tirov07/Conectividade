@@ -382,63 +382,9 @@
     });
   }
 
-  // ---- Overlay de progresso do lote (Op. 13) ------------------------------
-
-  const ID_OVERLAY = "conectividade-progresso-lote";
-
-  /**
-   * Cria (se não existir) e atualiza uma caixinha flutuante no canto da tela
-   * mostrando o progresso do lote, ex.: "Consultando lote: 30/120". Some
-   * sozinha quando o lote termina (msg.concluido).
-   */
-  function mostrarProgressoLote(msg) {
-    const { atual, total, placa, concluido } = msg;
-
-    let box = document.getElementById(ID_OVERLAY);
-
-    if (concluido) {
-      // Mostra "concluído" por um instante e remove.
-      if (box) {
-        box.querySelector(".cc-texto").textContent = `Lote concluído (${total}/${total})`;
-        box.querySelector(".cc-barra-cheia").style.width = "100%";
-        setTimeout(() => box && box.remove(), 4000);
-      }
-      return;
-    }
-
-    if (!box) {
-      box = document.createElement("div");
-      box.id = ID_OVERLAY;
-      box.style.cssText = [
-        "position:fixed", "bottom:20px", "right:20px", "z-index:2147483647",
-        "background:#1f2937", "color:#fff", "padding:14px 16px",
-        "border-radius:10px", "box-shadow:0 4px 16px rgba(0,0,0,.35)",
-        "font-family:Segoe UI,Arial,sans-serif", "font-size:13px",
-        "min-width:230px", "line-height:1.4"
-      ].join(";");
-      box.innerHTML = `
-        <div style="font-weight:600;margin-bottom:6px;">Conectividade — consulta em lote</div>
-        <div class="cc-texto" style="margin-bottom:8px;"></div>
-        <div style="background:#374151;border-radius:6px;height:8px;overflow:hidden;">
-          <div class="cc-barra-cheia" style="background:#22dd77;height:100%;width:0%;transition:width .3s;"></div>
-        </div>`;
-      document.body.appendChild(box);
-    }
-
-    const pct = total > 0 ? Math.round((atual / total) * 100) : 0;
-    const placaTxt = placa ? ` — ${placa}` : "";
-    box.querySelector(".cc-texto").textContent = `Consultando ${atual}/${total} (${pct}%)${placaTxt}`;
-    box.querySelector(".cc-barra-cheia").style.width = `${pct}%`;
-  }
-
   // ---- Entrada: mensagens do background + auto-processamento --------------
 
   chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-    if (msg && msg.acao === "progresso_lote") {
-      mostrarProgressoLote(msg);
-      return; // não precisa responder
-    }
-
     if (msg && msg.acao === "consultar_selagem") {
       // Inicia uma consulta nova nesta aba.
       const estado = {
@@ -464,19 +410,6 @@
       return true;
     }
   });
-
-  // Ao carregar a página, pergunta ao background se há um lote em andamento;
-  // se houver, reexibe o overlay de progresso (que foi perdido no reload).
-  try {
-    chrome.runtime.sendMessage({ __pedir_progresso_lote: true }, (resp) => {
-      if (chrome.runtime.lastError) return; // background ocupado; ignora
-      if (resp && resp.progresso) {
-        mostrarProgressoLote({ ...resp.progresso, concluido: false });
-      }
-    });
-  } catch {
-    /* ignore */
-  }
 
   // A cada carga de página, verifica se há consulta em andamento e continua.
   processar();

@@ -69,6 +69,19 @@ A proposta usa **o Chrome que o cliente já tem aberto e logado**:
 > faz essa parte. Ele é minúsculo, sem janela, e roda só quando a extensão o
 > chama via `connectNative()`.
 
+### Nome do arquivo (local x nuvem)
+
+O host é **agnóstico ao nome**: vigia qualquer `*.xml` em `C:\sga\req` e grava a
+resposta em `C:\sga\resp` com o **mesmo nome**. O nome depende da versão do SGA
+(uma máquina usa **uma** versão só):
+
+| Versão do SGA | Arquivo | Temporário (ignorado) |
+|---|---|---|
+| Local | `<USUÁRIO>.xml` (ex.: `ADM.xml`) | `<USUÁRIO>Temp.xml` |
+| Nuvem | `SGaCloud.xml` | `SGaCloudTemp.xml` |
+
+Arquivos cujo nome termina em `Temp` (rascunho do SGA) são ignorados.
+
 ## Estrutura
 
 ```

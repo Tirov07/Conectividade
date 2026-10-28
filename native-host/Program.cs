@@ -145,8 +145,13 @@ public static class Program
     {
         var nome = Path.GetFileNameWithoutExtension(caminho);
 
-        // Ignora o arquivo temporário do SGA (rascunho). O arquivo "oficial"
-        // é o <USUARIO>.xml (ex.: ADM.xml), não o <USUARIO>Temp.xml.
+        // Ignora o arquivo temporário do SGA (rascunho). O nome do arquivo
+        // depende da versão do SGA (uma máquina usa UMA versão só):
+        //   - SGA LOCAL:  <USUARIO>.xml  (temporário: <USUARIO>Temp.xml)
+        //   - SGA NUVEM:  SGaCloud.xml   (temporário: SGaCloudTemp.xml)
+        // O host é agnóstico ao nome (vigia qualquer *.xml e responde com o
+        // mesmo nome); o filtro "termina em Temp" (case-insensitive) cobre os
+        // temporários das duas versões.
         if (nome.EndsWith("Temp", StringComparison.OrdinalIgnoreCase))
         {
             Log.Info($"Ignorando arquivo temporário do SGA: {Path.GetFileName(caminho)}");
@@ -693,8 +698,9 @@ public static class Program
 
     private static void GravarResposta(ConsultaSelagemResposta resposta, PedidoPendente pendente)
     {
-        // O SGA usa SEMPRE o mesmo nome por usuário nas duas pastas:
-        //   C:\sga\req\ADM.XML  ->  C:\sga\resp\ADM.XML
+        // O SGA usa o MESMO nome de arquivo nas duas pastas (req e resp):
+        //   SGA local:  C:\sga\req\ADM.XML      -> C:\sga\resp\ADM.XML
+        //   SGA nuvem:  C:\sga\req\SGaCloud.xml  -> C:\sga\resp\SGaCloud.xml
         // Por isso o arquivo de resposta mantém EXATAMENTE o mesmo nome de
         // arquivo do envio (inclusive a extensão, ex.: .XML maiúsculo).
         var nomeArquivo = Path.GetFileName(pendente.ArquivoOrigem);

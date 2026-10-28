@@ -264,26 +264,42 @@
     }
 
     try {
-      // Após o envio (automático): lê o desfecho (erro/sucesso) e finaliza.
-      if (estado.etapa === "aguardando_resultado") {
+      // ERRO pode aparecer DEPOIS de uma ação nossa (busca ou envio):
+      //  - logo após a busca (ex.: "A GRU informada já foi utilizada") — nesse
+      //    caso a tela de preenchimento NUNCA carrega;
+      //  - após o envio final.
+      // Só consideramos o alerta se já passamos da busca (etapa preencher ou
+      // aguardando_resultado), para não confundir com um erro remanescente.
+      if (estado.etapa === "preencher" || estado.etapa === "aguardando_resultado") {
         const r = lerResultadoEnvio();
-        if (r.pronto) {
-          finalizar(estado, { status: r.status, message: r.message });
+        if (r.pronto && r.status === false) {
+          finalizar(estado, { status: false, message: r.message });
+          return;
         }
-        // se não está pronto, aguarda a próxima carga de página.
-        return;
+        // Após o envio (automático): se deu sucesso, finaliza.
+        if (estado.etapa === "aguardando_resultado") {
+          if (r.pronto) finalizar(estado, { status: r.status, message: r.message });
+          return; // sem desfecho ainda: aguarda próxima carga
+        }
       }
 
+      // Etapa 2: a tela de preenchimento carregou (busca deu certo).
       if (estado.etapa === "preencher" && ehPaginaPreenchimento()) {
         await preencher(estado);
         return;
       }
+
+      // Etapa 2 pedida, mas a tela de preenchimento ainda não apareceu E não há
+      // erro conhecido: aguarda a próxima carga (pode estar carregando).
+      if (estado.etapa === "preencher") {
+        return;
+      }
+
+      // Etapa 1: busca.
       if ((!estado.etapa || estado.etapa === "busca") && ehPaginaBusca()) {
         buscar(estado);
         return;
       }
-      // (etapa "aguardando_resultado": leitura do retorno será feita quando o
-      //  XML de retorno da Op.3 for definido pelo cliente.)
     } catch (e) {
       finalizar(estado, { status: false, message: `Erro ao informar selagem: ${e.message}` });
     }

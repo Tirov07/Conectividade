@@ -49,6 +49,12 @@ public static class Program
     // uma consulta por vez (mesma aba do Chrome), então serializamos aqui.
     private static readonly BlockingCollection<string> FilaEnvios = new();
 
+    // Handshake: a thread da fila só começa a processar DEPOIS que a extensão
+    // confirma que está viva (responde "pong" ao nosso "ping"). Isso evita o
+    // travamento de um arquivo que já estava na pasta quando o host subiu (o
+    // Chrome acabou de iniciar o host e a extensão ainda não estava pronta).
+    private static readonly ManualResetEventSlim ExtensaoPronta = new(false);
+
     // Sincroniza a espera da resposta da extensão para o pedido atual.
     private static readonly object RespostaLock = new();
     private static ResultadoConsulta? RespostaBrutaAtual;
@@ -74,9 +80,20 @@ public static class Program
         var consumidora = new Thread(ConsumirFila) { IsBackground = true };
         consumidora.Start();
 
-        // Enfileira arquivos que já estavam na pasta antes de abrir.
+        // Handshake: pergunta à extensão se está pronta. Ela responde "pong"
+        // (ver TratarMensagemDaExtensao), que libera a thread da fila. Como a
+        // extensão é quem iniciou este host, ela já existe; o ping garante que
+        // o canal e o listener estão prontos antes de mandar qualquer consulta.
+        try { NativeMessaging.WriteMessage(new { tipo = "ping" }); }
+        catch (Exception ex) { Log.Error($"Falha ao enviar ping inicial: {ex.Message}"); }
+
+        // Enfileira arquivos que já estavam na pasta antes de abrir. Eles ficam
+        // na fila aguardando o "pong" (a thread consumidora só processa depois).
         foreach (var arquivo in Directory.GetFiles(ReqDir, "*.xml"))
+        {
+            Log.Info($"Arquivo pendente encontrado na inicialização: {Path.GetFileName(arquivo)}");
             EnfileirarEnvio(arquivo);
+        }
 
         // Loop de leitura das mensagens da extensão (bloqueante até o Chrome
         // fechar o stream).
@@ -179,6 +196,13 @@ public static class Program
 
     private static void ConsumirFila()
     {
+        // Espera a extensão confirmar que está pronta (pong) antes de processar
+        // o primeiro item. Se o pong não vier em 30s (ex.: extensão travada),
+        // segue mesmo assim para não deixar a fila parada para sempre — o
+        // pedido terá seu próprio timeout e devolverá erro ao SGA.
+        if (!ExtensaoPronta.Wait(TimeSpan.FromSeconds(30)))
+            Log.Error("Extensão não confirmou 'pong' em 30s; processando a fila mesmo assim.");
+
         foreach (var caminho in FilaEnvios.GetConsumingEnumerable())
         {
             try
@@ -593,7 +617,8 @@ public static class Program
 
         if (tipo == "pong")
         {
-            Log.Info("pong recebido da extensão.");
+            Log.Info("pong recebido da extensão. Liberando a fila.");
+            ExtensaoPronta.Set(); // extensão pronta -> a fila pode processar
             return;
         }
 

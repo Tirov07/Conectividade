@@ -72,9 +72,58 @@ async function onMensagemDoHost(msg) {
     return;
   }
 
+  if (msg.tipo === "progresso_lote") {
+    atualizarProgressoLote(msg);
+    return;
+  }
+
   if (msg.tipo === "ping") {
     responderHost({ tipo: "pong" });
     return;
+  }
+}
+
+/**
+ * Atualiza o indicador de progresso do lote: um badge no ícone da extensão e
+ * um overlay flutuante nas abas do Cronotacógrafo.
+ */
+// Guarda o último progresso conhecido do lote, para reexibir o overlay quando
+// a página recarrega durante o lote (cada consulta recarrega a aba).
+let ultimoProgressoLote = null;
+
+async function atualizarProgressoLote(msg) {
+  const { atual, total, placa, concluido } = msg;
+
+  ultimoProgressoLote = concluido ? null : { atual, total, placa };
+
+  // 1) Badge no ícone da extensão (visível mesmo fora da aba do site).
+  try {
+    if (concluido) {
+      await chrome.action.setBadgeText({ text: "" });
+    } else {
+      await chrome.action.setBadgeBackgroundColor({ color: "#2d7" });
+      await chrome.action.setBadgeText({ text: `${atual}` });
+    }
+  } catch (e) {
+    log("Falha ao atualizar badge:", e.message);
+  }
+
+  // 2) Overlay flutuante nas abas do Cronotacógrafo.
+  try {
+    const abas = await chrome.tabs.query({ url: `${BASE_URL}/*` });
+    for (const aba of abas) {
+      chrome.tabs
+        .sendMessage(aba.id, {
+          acao: "progresso_lote",
+          atual,
+          total,
+          placa,
+          concluido
+        })
+        .catch(() => {}); // aba pode não ter content.js ainda; ignora
+    }
+  } catch (e) {
+    log("Falha ao enviar progresso às abas:", e.message);
   }
 }
 
@@ -187,6 +236,12 @@ async function enviarParaContentScript(tabId, mensagem) {
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (msg && msg.__popup === "status_host") {
     sendResponse({ conectado: !!porta });
+    return true;
+  }
+  // content.js pergunta, ao carregar, se há um lote em andamento (para
+  // reexibir o overlay após o recarregamento de página).
+  if (msg && msg.__pedir_progresso_lote) {
+    sendResponse({ progresso: ultimoProgressoLote });
     return true;
   }
 });

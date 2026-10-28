@@ -343,11 +343,15 @@ public static class Program
 
         var resposta = new ConsultaLotePlacasResposta { Status = true };
         int ok = 0, falhou = 0, n = 0;
+        int total = envio.Lote.Count;
 
         foreach (var item in envio.Lote)
         {
             n++;
-            Log.Info($"Op.13 consultando placa {n}/{envio.Lote.Count}: {item.Placa} (cliente {item.CodCliente})");
+            Log.Info($"Op.13 consultando placa {n}/{total}: {item.Placa} (cliente {item.CodCliente})");
+
+            // Avisa a extensão para mostrar o progresso (ex.: 30/120) na tela.
+            EnviarProgressoLote(n, total, item.Placa);
 
             var r = ConsultarUmaPlaca(item.Placa, "", "");
             var consulta = MontarItemLote(item, r);
@@ -356,10 +360,33 @@ public static class Program
             if (consulta.StatusConsulta) ok++; else falhou++;
         }
 
+        // Sinaliza que o lote terminou (a extensão esconde o indicador).
+        EnviarProgressoLote(total, total, "", concluido: true);
+
         resposta.Message = $"CONSULTA DE LOTE FINALIZADA. {ok} ok, {falhou} sem dados.";
-        Log.Info($"Op.13 lote concluído: {ok} ok, {falhou} sem dados de {envio.Lote.Count}.");
+        Log.Info($"Op.13 lote concluído: {ok} ok, {falhou} sem dados de {total}.");
 
         GravarRespostaLote(resposta, caminho);
+    }
+
+    /// <summary>
+    /// Envia à extensão o progresso do lote para exibição na tela (overlay +
+    /// badge). É só informativo; não espera resposta.
+    /// </summary>
+    private static void EnviarProgressoLote(int atual, int total, string placa, bool concluido = false)
+    {
+        try
+        {
+            NativeMessaging.WriteMessage(new
+            {
+                tipo = "progresso_lote",
+                atual,
+                total,
+                placa = placa ?? "",
+                concluido
+            });
+        }
+        catch { /* progresso é best-effort; nunca derruba o lote */ }
     }
 
     // ---- Trata a resposta da extensão --------------------------------------

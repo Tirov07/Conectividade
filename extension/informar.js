@@ -289,9 +289,39 @@
         return;
       }
 
-      // Etapa 2 pedida, mas a tela de preenchimento ainda não apareceu E não há
-      // erro conhecido: aguarda a próxima carga (pode estar carregando).
+      // Etapa 2 pedida, mas a tela de preenchimento ainda NÃO apareceu.
+      // Três desfechos possíveis após a busca:
+      //   (1) carrega a tela de preenchimento -> segue;
+      //   (2) aparece um alert de erro -> retorna o erro;
+      //   (3) FICA NA TELA DE BUSCA sem erro -> GRU inválida (o site trava sem
+      //       avisar nada quando o número da GRU está incorreto).
+      // Fazemos uma espera ativa de ~6s cobrindo os três casos.
       if (estado.etapa === "preencher") {
+        const prazoMs = 6000;
+        const inicio = Date.now();
+        while (Date.now() - inicio < prazoMs) {
+          if (ehPaginaPreenchimento()) {
+            await preencher(estado);
+            return;
+          }
+          const r = lerResultadoEnvio();
+          if (r.pronto && r.status === false) {
+            finalizar(estado, { status: false, message: r.message });
+            return;
+          }
+          await CC.sleep(300);
+        }
+        // Esgotou o tempo e continuamos na tela de busca, sem erro nem avanço:
+        // o número da GRU é inválido.
+        if (ehPaginaBusca()) {
+          finalizar(estado, { status: false, message: "NÚMERO DE GRU INCORRETO." });
+          return;
+        }
+        // Situação inesperada (nem busca, nem preenchimento, nem erro).
+        finalizar(estado, {
+          status: false,
+          message: "NÃO FOI POSSÍVEL PROSSEGUIR COM A SELAGEM. VERIFIQUE OS DADOS."
+        });
         return;
       }
 

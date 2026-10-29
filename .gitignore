@@ -9,3 +9,14 @@ native-host/obj/
 # OS
 .DS_Store
 Thumbs.db
+
+# Arquivos de teste / dados locais do SGA (não versionar).
+# (O exemplos/ENVIO-exemplo.xml é referência versionada de propósito e fica.)
+native-host/install/*.xml
+operações/
+operacoes/
+
+# O manifesto do native host é específico de cada máquina (path do .exe + ID
+# da extensão). Mantemos um modelo versionado; a cópia preenchida fica local.
+# (Se preferir versionar, remova a linha abaixo.)
+# native-host/install/com.canada.conectividade.json

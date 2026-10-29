@@ -222,15 +222,50 @@
       return { pronto: true, status: false, message: msg };
     }
 
-    // Caso de SUCESSO — detecção provisória até termos o XML de retorno de
-    // sucesso do cliente. Procuramos um alerta de sucesso/confirmação.
+    // Caso de SUCESSO — o site mostra um alerta de sucesso ("Selagem informada
+    // com sucesso") e a selagem passa a existir com um PROTOCOLO (~18 dígitos)
+    // e uma SITUAÇÃO ("Ativa"). O retorno esperado pelo SGA é:
+    //   STATUS=True, Protocolo, Situacao, Message="SELAGEM INFORMADA COM SUCESSO."
     const ok = document.querySelector(".alert.alert-success, .alert-success");
     if (ok) {
-      return { pronto: true, status: true, message: CC.limpar(ok.textContent) };
+      const texto = ok.textContent || "";
+      return {
+        pronto: true,
+        status: true,
+        message: CC.limpar(texto) || "Selagem informada com sucesso.",
+        protocolo: extrairProtocolo(),
+        situacao: extrairSituacao()
+      };
     }
 
     // Ainda sem desfecho visível.
     return { pronto: false };
+  }
+
+  /**
+   * Extrai o número de protocolo da selagem recém-informada. O protocolo tem
+   * ~18 dígitos (ex.: 518020160558362884). Procura por um rótulo "Protocolo"
+   * seguido do número; se não achar, pega o maior número longo da página.
+   * (Seletores finos serão calibrados quando tivermos o HTML da tela de
+   *  sucesso; esta heurística já cobre o caso comum.)
+   */
+  function extrairProtocolo() {
+    // 1) procura por "Protocolo" em um .fakeinput/label próximo
+    const prot = CC.valorPorLabel ? CC.valorPorLabel(document, "Protocolo") : "";
+    if (prot && /\d{10,}/.test(prot)) return prot.match(/\d{10,}/)[0];
+    // 2) fallback: maior sequência de 15+ dígitos no texto da página
+    const m = (document.body.textContent || "").match(/\d{15,}/g);
+    return m ? m.sort((a, b) => b.length - a.length)[0] : "";
+  }
+
+  /**
+   * Extrai a situação da selagem (ex.: "Ativa"). Procura por um rótulo
+   * "Situação"; se não achar, devolve "Ativa" (situação típica de uma selagem
+   * recém-informada com sucesso).
+   */
+  function extrairSituacao() {
+    const sit = CC.valorPorLabel ? CC.valorPorLabel(document, "Situação") : "";
+    return sit || "Ativa";
   }
 
   // ---- Finalização --------------------------------------------------------

@@ -441,13 +441,15 @@ public static class Program
         Pendentes.TryRemove(id, out _);
         if (!respondeu) Log.Error($"Op.3 pedido {id} expirou sem resposta da extensão.");
 
-        // Retorno no formato InformarSelagemResposta (confirmado pelo exemplo
-        // de erro real). A Message sai em MAIÚSCULAS, como o SGA espera.
-        // (O retorno de SUCESSO com protocolo será calibrado quando o cliente
-        //  enviar o exemplo; a estrutura STATUS + Message já cobre o erro.)
+        // Retorno no formato InformarSelagemResposta (confirmado pelos exemplos
+        // reais de erro e de sucesso). A Message sai em MAIÚSCULAS. No sucesso,
+        // inclui Protocolo e Situacao; no erro, apenas STATUS + Message (os
+        // ShouldSerialize do modelo omitem Protocolo/Situacao quando vazios).
         var resposta = new InformarSelagemResposta
         {
             Status = r.Status,
+            Protocolo = r.Protocolo ?? "",
+            Situacao = r.Situacao ?? "",
             Message = (r.Message ?? "").ToUpperInvariant()
         };
         GravarRespostaInformar(resposta, caminho);
@@ -648,6 +650,12 @@ public static class Program
         var resultado = new ResultadoConsulta { Status = status, Message = message };
         if (status && msg.TryGetProperty("dados", out var dados) && dados.ValueKind == JsonValueKind.Object)
             resultado.Dados = dados.Clone(); // guarda o JSON bruto para quem consumir
+
+        // Op. 3 (informar selagem) no sucesso: protocolo gerado + situação.
+        if (msg.TryGetProperty("protocolo", out var pr) && pr.ValueKind == JsonValueKind.String)
+            resultado.Protocolo = pr.GetString() ?? "";
+        if (msg.TryGetProperty("situacao", out var si) && si.ValueKind == JsonValueKind.String)
+            resultado.Situacao = si.GetString() ?? "";
 
         // Entrega o resultado para a thread da fila (que está esperando) e a
         // acorda. A montagem/gravação do XML é feita lá, de forma sequencial.
@@ -1042,6 +1050,9 @@ public static class Program
     private sealed class ResultadoConsulta
     {
         public bool Status { get; set; }
+        // Op. 3 (informar selagem) no sucesso: protocolo gerado e situação.
+        public string Protocolo { get; set; } = "";
+        public string Situacao { get; set; } = "";
         public string Message { get; set; } = "";
         public JsonElement? Dados { get; set; }
     }

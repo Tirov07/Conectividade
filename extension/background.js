@@ -290,7 +290,9 @@ chrome.runtime.onMessage.addListener((msg) => {
         status: !!msg.status,
         dados: msg.dados,
         message: msg.message || "",
-        naoEncontrado: !!msg.naoEncontrado
+        naoEncontrado: !!msg.naoEncontrado,
+        protocolo: msg.protocolo || "",
+        situacao: msg.situacao || ""
       });
     }
   }

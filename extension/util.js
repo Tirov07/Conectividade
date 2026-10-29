@@ -151,5 +151,25 @@
     return !!document.querySelector(".user-info, #header-nav");
   };
 
+  /**
+   * Retorna o texto de um .fakeinput pelo texto do <label> que o precede.
+   * Usado para ler campos de telas de detalhe/resultado (ex.: Protocolo,
+   * Situação). Tolerante a acentos/caixa.
+   */
+  CC.valorPorLabel = function (raiz, textoLabel) {
+    const alvo = CC.norm(textoLabel);
+    const labels = (raiz || document).querySelectorAll("label");
+    for (const label of labels) {
+      if (CC.norm(label.textContent) === alvo) {
+        const campo = label.nextElementSibling;
+        if (campo && campo.classList.contains("fakeinput")) return CC.limpar(campo.textContent);
+        const pai = label.parentElement;
+        const fake = pai && pai.querySelector(".fakeinput");
+        if (fake) return CC.limpar(fake.textContent);
+      }
+    }
+    return "";
+  };
+
   window.CC = CC;
 })();

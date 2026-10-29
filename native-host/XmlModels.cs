@@ -361,6 +361,17 @@ public class InformarSelagemResposta
         set => Status = value?.Trim().Equals("true", StringComparison.OrdinalIgnoreCase) ?? false;
     }
 
+    // Protocolo e Situacao só aparecem no SUCESSO (ex.: Protocolo gerado,
+    // Situacao "Ativa"). No ERRO o XML traz apenas STATUS + Message, então
+    // ShouldSerialize omite esses elementos quando vazios.
+    [XmlElement("Protocolo")]
+    public string Protocolo { get; set; } = "";
+    public bool ShouldSerializeProtocolo() => !string.IsNullOrEmpty(Protocolo);
+
+    [XmlElement("Situacao")]
+    public string Situacao { get; set; } = "";
+    public bool ShouldSerializeSituacao() => !string.IsNullOrEmpty(Situacao);
+
     [XmlElement("Message")]
     public string Message { get; set; } = "";
 }

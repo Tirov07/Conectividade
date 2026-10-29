@@ -93,12 +93,27 @@
     const eq = estado.equipamento || {};
     const sel = estado.selagem || {};
 
+    // Durante o preenchimento, o site pode abrir um POPUP (SweetAlert) de
+    // impedimento (ex.: "instrumento não possui verificação inicial"). Se isso
+    // acontecer no meio dos AJAX e a extensão continuar mexendo na tela, dá o
+    // erro técnico "element not interactable" (o modal bloqueia a página). Por
+    // isso checamos o modal após cada passo e paramos com a mensagem real.
+    const checarModal = () => {
+      const r = lerResultadoEnvio();
+      if (r.pronto) {
+        finalizar(estado, { status: r.status, message: r.message, protocolo: r.protocolo, situacao: r.situacao });
+        return true;
+      }
+      return false;
+    };
+
     // (a) Marca -> dispara AJAX, recarrega o #form-ajax.
     const selMarca = document.querySelector("#SelagemInstrumentoMarcaId");
     if (!CC.selectByText(selMarca, eq.marca)) {
       return falhar(estado, `Marca de instrumento não encontrada na lista: ${eq.marca}`);
     }
     await CC.esperarAjax();
+    if (checarModal()) return;
 
     // (b) Modelo -> dispara AJAX (faz surgir os campos de selo).
     const selModelo = await CC.esperarElemento("#SelagemInstrumentoModeloId");
@@ -106,11 +121,13 @@
       return falhar(estado, `Modelo de instrumento não encontrado na lista: ${eq.modelo}`);
     }
     await CC.esperarAjax();
+    if (checarModal()) return;
 
     // (c) Nº série -> dispara AJAX.
     const inpSerie = await CC.esperarElemento("#SelagemNumSerie");
     CC.setInput(inpSerie, (eq.nroSerie || "").toUpperCase());
     await CC.esperarAjax();
+    if (checarModal()) return;
 
     // Após os 3 AJAX, o form está "estável". Reobtém os elementos (o DOM foi
     // substituído) e preenche o restante.
@@ -209,6 +226,31 @@
    * trouxe um desfecho (deve aguardar).
    */
   function lerResultadoEnvio() {
+    // Caso de POPUP (SweetAlert). Alguns impedimentos do site NÃO vêm num box
+    // vermelho — vêm num modal SweetAlert (div.sweet-alert visível). ATENÇÃO:
+    // o site usa o ícone de SUCESSO (verde ✓) mesmo para mensagens de ERRO
+    // (ex.: "O instrumento informado não possui verificação inicial. Esta
+    // informação de selagem não pode prosseguir."). Por isso NÃO confiamos no
+    // ícone: decidimos sucesso/erro pelo TEXTO do modal.
+    const modal = document.querySelector(".sweet-alert.visible, .sweet-alert.showSweetAlert");
+    if (modal) {
+      const p = modal.querySelector("p.lead, p");
+      const h2 = modal.querySelector("h2");
+      const texto = CC.limpar((p && p.textContent) || "");
+      const titulo = CC.limpar((h2 && h2.textContent) || "");
+      const msgModal = texto || titulo || "Não foi possível informar a selagem.";
+      // É sucesso de verdade só se o texto falar em "sucesso". Qualquer outra
+      // coisa (impedimento, "não pode prosseguir", etc.) é tratada como erro.
+      const ehSucesso = /sucesso/i.test(msgModal);
+      if (ehSucesso) {
+        return {
+          pronto: true, status: true, message: msgModal,
+          protocolo: extrairProtocolo(), situacao: extrairSituacao()
+        };
+      }
+      return { pronto: true, status: false, message: msgModal };
+    }
+
     // Caso de ERRO.
     const erro = document.querySelector(".alert.alert-error, .alert-error");
     if (erro) {

@@ -222,17 +222,22 @@
       return { pronto: true, status: false, message: msg };
     }
 
-    // Caso de SUCESSO — o site mostra um alerta de sucesso ("Selagem informada
-    // com sucesso") e a selagem passa a existir com um PROTOCOLO (~18 dígitos)
-    // e uma SITUAÇÃO ("Ativa"). O retorno esperado pelo SGA é:
-    //   STATUS=True, Protocolo, Situacao, Message="SELAGEM INFORMADA COM SUCESSO."
-    const ok = document.querySelector(".alert.alert-success, .alert-success");
+    // Caso de SUCESSO — box VERDE no topo (mesmo padrão do erro, mas verde),
+    // com "Selagem informada com sucesso"; a selagem passa a existir com um
+    // PROTOCOLO (~18 dígitos) e SITUAÇÃO ("Ativa"). O site usa Bootstrap antigo,
+    // então o verde pode vir como .alert-success OU .alert-info — e, por
+    // segurança, também aceitamos qualquer .alert cujo texto fale em "sucesso".
+    const ok = acharAlertaSucesso();
     if (ok) {
-      const texto = ok.textContent || "";
+      // Pega o texto do <h4>/<li> se houver, senão o texto do box; remove o "×".
+      const h4 = ok.querySelector(".alert-heading, h4");
+      const li = ok.querySelector("ul li");
+      let texto = CC.limpar((h4 && h4.textContent) || (li && li.textContent) || ok.textContent || "");
+      texto = texto.replace(/^×\s*/, "").trim();
       return {
         pronto: true,
         status: true,
-        message: CC.limpar(texto) || "Selagem informada com sucesso.",
+        message: texto || "Selagem informada com sucesso.",
         protocolo: extrairProtocolo(),
         situacao: extrairSituacao()
       };
@@ -240,6 +245,24 @@
 
     // Ainda sem desfecho visível.
     return { pronto: false };
+  }
+
+  /**
+   * Acha o box de alerta de SUCESSO. O site usa Bootstrap antigo, então o
+   * alerta verde pode ter classe .alert-success ou .alert-info. Como garantia
+   * extra, também aceita qualquer .alert (que NÃO seja de erro) cujo texto
+   * mencione "sucesso". Assim cobrimos variações sem confundir com o erro.
+   */
+  function acharAlertaSucesso() {
+    // 1) classes verdes conhecidas
+    const porClasse = document.querySelector(".alert-success, .alert.alert-info");
+    if (porClasse) return porClasse;
+    // 2) qualquer alerta (não-erro) que fale em "sucesso"
+    for (const el of document.querySelectorAll(".alert")) {
+      if (el.classList.contains("alert-error") || el.classList.contains("alert-danger")) continue;
+      if (/sucesso/i.test(el.textContent || "")) return el;
+    }
+    return null;
   }
 
   /**

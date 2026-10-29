@@ -4,12 +4,11 @@
   <meta charset="UTF-8" />
   <style>
     body { font-family: Segoe UI, Arial, sans-serif; width: 280px; margin: 0; padding: 14px; }
-    h1 { font-size: 14px; margin: 0 0 10px; }
+    .logo { display: block; width: 100%; max-width: 230px; height: auto; margin: 0 auto 12px; }
     .status { display: flex; align-items: center; gap: 8px; font-size: 13px; margin-bottom: 8px; }
     .dot { width: 10px; height: 10px; border-radius: 50%; background: #bbb; }
     .dot.ok { background: #2ecc71; }
     .dot.off { background: #e74c3c; }
-    .hint { font-size: 11px; color: #666; margin-top: 10px; line-height: 1.4; }
 
     /* Bloco de progresso do lote: só aparece quando há um lote em andamento. */
     #lote { display: none; margin-top: 12px; padding-top: 12px; border-top: 1px solid #eee; }
@@ -22,7 +21,7 @@
   </style>
 </head>
 <body>
-  <h1>Conectividade Canadá</h1>
+  <img class="logo" src="icons/logo_horizontal.png" alt="Canada Informática" />
   <div class="status">
     <span id="dot-host" class="dot"></span>
     <span>Comunicação com o SGA</span>
@@ -41,10 +40,6 @@
     <div class="barra"><div id="lote-barra" class="barra-cheia"></div></div>
   </div>
 
-  <div class="hint">
-    Faça o login manualmente no site do Cronotacógrafo. As consultas de placa
-    serão feitas automaticamente nesta aba, sem abrir outro navegador.
-  </div>
   <script src="popup.js"></script>
 </body>
 </html>

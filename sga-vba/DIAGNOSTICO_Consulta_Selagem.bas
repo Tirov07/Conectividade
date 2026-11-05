@@ -483,3 +483,83 @@ Public Sub Diagnostico_Captura_Resp(Optional ByVal wPlaca As String = "CVN8588")
            "Tamanho: " & Len(conteudo) & " chars" & vbCrLf & vbCrLf & _
            "---- CONTEUDO ----" & vbCrLf & conteudo, vbInformation, "Captura Resp"
 End Sub
+
+'===========================================================================
+'  Diagnostico_Final
+'---------------------------------------------------------------------------
+'  Teste definitivo: faz a consulta, captura o resp assim que aparece, e
+'  JA na sequencia (com o arquivo garantidamente presente) tenta o
+'  Load_Objetos nas variantes de formato - tudo de uma vez.
+'
+'  Assim elimina a duvida do "arquivo sumiu antes de testar".
+'
+'  Rode:  Diagnostico_Final "CVN8588"
+'===========================================================================
+Public Sub Diagnostico_Final(Optional ByVal wPlaca As String = "CVN8588")
+    Dim ofuncoes As CanadaConnectivity.FuncoesDiversas
+    Dim oconnreq As CanadaConnectivity.ReqConsultaSelagem
+    Dim sUser As String, sReq As String, sResp As String, sMsg As String
+    Dim bIsCloud As Boolean, i As Integer, sOrig As String
+
+    Set ofuncoes = New CanadaConnectivity.FuncoesDiversas
+    sUser = ofuncoes.ReturnUserWindows
+    bIsCloud = IsCloud()
+    sReq = "C:\Sga\Req\" & sUser & ".xml"
+    sResp = "C:\Sga\Resp\" & sUser & ".xml"
+
+    ofuncoes.ExcluiArquivos sReq
+    ofuncoes.ExcluiArquivos sResp
+
+    Set oconnreq = New CanadaConnectivity.ReqConsultaSelagem
+    oconnreq.CreateConsultaSelagem wPlaca, "", "", False, _
+        Retorna_Links_Uteis(6), Retorna_Links_Uteis(10), 6, "www.canainfo.com.br"
+
+    ' captura o resp assim que aparece
+    sOrig = ""
+    For i = 1 To 240
+        If Dir(sResp) <> "" Then
+            sOrig = LeTexto(sResp)
+            If Len(sOrig) > 0 Then Exit For
+        End If
+        Sleep 250
+        DoEvents
+    Next i
+
+    If Len(sOrig) = 0 Then
+        MsgBox "resp nao apareceu.", vbCritical
+        Exit Sub
+    End If
+
+    ' salva uma copia permanente para analise
+    EscreveTexto "C:\Sga\Resp\CAPTURA.txt", sOrig
+
+    sMsg = "=== DIAGNOSTICO FINAL ===" & vbCrLf
+    sMsg = sMsg & "resp capturado: " & Len(sOrig) & " chars" & vbCrLf
+    sMsg = sMsg & "IsCloud=" & bIsCloud & "  user=[" & sUser & "]" & vbCrLf & vbCrLf
+
+    ' agora testa variantes COM o arquivo presente
+    sMsg = sMsg & "0) original               -> " & TentaLoad(sResp, sOrig, sUser) & vbCrLf
+
+    Dim p As Long, s1 As String
+    p = InStr(sOrig, "?>")
+    If p > 0 Then s1 = Mid(sOrig, p + 2) Else s1 = sOrig
+    sMsg = sMsg & "1) sem <?xml?>            -> " & TentaLoad(sResp, s1, sUser) & vbCrLf
+
+    Dim s2 As String
+    s2 = Replace(sOrig, "encoding=""utf-8""", "encoding=""ISO-8859-1""")
+    s2 = Replace(s2, "encoding=""UTF-8""", "encoding=""ISO-8859-1""")
+    sMsg = sMsg & "2) encoding ISO-8859-1    -> " & TentaLoad(sResp, s2, sUser) & vbCrLf
+
+    Dim s3 As String
+    s3 = Replace(s2, " xmlns=""www.canainfo.com.br""", "")
+    sMsg = sMsg & "3) ISO + sem xmlns        -> " & TentaLoad(sResp, s3, sUser) & vbCrLf
+
+    Dim s4 As String
+    s4 = Replace(sOrig, " xmlns=""www.canainfo.com.br""", "")
+    sMsg = sMsg & "4) sem xmlns              -> " & TentaLoad(sResp, s4, sUser) & vbCrLf
+
+    ' restaura original
+    EscreveTexto sResp, sOrig
+
+    MsgBox sMsg, vbInformation, "Diagnostico Final"
+End Sub

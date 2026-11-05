@@ -973,13 +973,25 @@ public static class Program
         var ns = new XmlSerializerNamespaces();
         ns.Add("", "www.canainfo.com.br");
 
-        var tmp = caminho + ".tmp";
+        // O arquivo temporário NÃO pode terminar em ".xml": o SGA fica em loop
+        // chamando CheckFile(C:\sga\resp\<nome>.xml) e, dependendo da versão, a
+        // checagem/leitura poderia pegar um ".xml.tmp" ainda em escrita e a DLL
+        // Load_Objetos estourava "objeto não definido" (80004003). Usamos uma
+        // extensão sem ".xml" (".writing") para o SGA jamais enxergar o rascunho.
+        var tmp = caminho + ".writing";
         using (var inner = XmlWriter.Create(tmp, settings))
         using (var writer = new FullEndElementWriter(inner))
+        {
             ser.Serialize(writer, obj, ns);
+            writer.Flush();
+            inner.Flush();
+        }
 
-        if (File.Exists(caminho)) File.Delete(caminho);
-        File.Move(tmp, caminho);
+        // Rename ATÔMICO: substitui o arquivo final de uma vez (overwrite:true),
+        // sem o passo "Delete + Move" que deixava uma janela em que o <nome>.xml
+        // NÃO existia — era nessa janela que o SGA lia e a DLL falhava.
+        // O arquivo .xml só "aparece" para o SGA já completo.
+        File.Move(tmp, caminho, overwrite: true);
     }
 
     /// <summary>

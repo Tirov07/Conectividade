@@ -270,3 +270,65 @@ Private Sub EscreveTexto(ByVal sPath As String, ByVal sConteudo As String)
     Put #iFile, 1, sConteudo
     Close #iFile
 End Sub
+
+'===========================================================================
+'  Diagnostico_Isola_Classe
+'---------------------------------------------------------------------------
+'  Descobre se o problema e (1) a DLL inteira, (2) so a classe
+'  LoadRespConsultaSelagem, ou (3) o metodo Load_Objetos.
+'
+'  Testa instanciar varias classes da DLL e chamar Load_Objetos passo a passo,
+'  mostrando em qual exato ponto o 80004003 aparece.
+'
+'  Rode (NAO precisa de resp existir para a 1a parte):
+'       Diagnostico_Isola_Classe
+'===========================================================================
+Public Sub Diagnostico_Isola_Classe()
+    Dim sMsg As String
+    sMsg = "=== ISOLAR CLASSE / DLL ===" & vbCrLf
+
+    '--- 1) Instanciar classes da DLL (sem chamar metodo) ---
+    sMsg = sMsg & InstanciaOK("FuncoesDiversas") & vbCrLf
+    sMsg = sMsg & InstanciaOK("ReqConsultaSelagem") & vbCrLf
+    sMsg = sMsg & InstanciaOK("LoadRespConsultaSelagem") & vbCrLf
+    sMsg = sMsg & InstanciaOK("LoadRespConsultaLotePlacas") & vbCrLf
+
+    '--- 2) Na classe LoadRespConsultaSelagem, acessar propriedades ANTES de Load ---
+    sMsg = sMsg & "---- antes do Load_Objetos ----" & vbCrLf
+    Dim oR As CanadaConnectivity.LoadRespConsultaSelagem
+    On Error Resume Next
+    Set oR = New CanadaConnectivity.LoadRespConsultaSelagem
+    Err.Clear
+    Dim dummy As Variant
+
+    dummy = oR.oSTATUS
+    sMsg = sMsg & "ler oSTATUS antes do Load: " & IIf(Err.Number = 0, "OK (" & dummy & ")", "ERRO " & Err.Number) & vbCrLf
+    Err.Clear
+
+    Dim oGruNada As Boolean
+    oGruNada = (oR.oGRU Is Nothing)
+    sMsg = sMsg & "oGRU Is Nothing antes do Load: " & IIf(Err.Number = 0, CStr(oGruNada), "ERRO " & Err.Number & " (" & Err.Description & ")") & vbCrLf
+    Err.Clear
+
+    Dim oVeicNada As Boolean
+    oVeicNada = (oR.oVeiculo Is Nothing)
+    sMsg = sMsg & "oVeiculo Is Nothing antes do Load: " & IIf(Err.Number = 0, CStr(oVeicNada), "ERRO " & Err.Number & " (" & Err.Description & ")") & vbCrLf
+    On Error GoTo 0
+
+    MsgBox sMsg, vbInformation, "Isolar Classe"
+End Sub
+
+Private Function InstanciaOK(ByVal sClasse As String) As String
+    On Error Resume Next
+    Dim o As Object
+    Err.Clear
+    Set o = CreateObject("CanadaConnectivity." & sClasse)
+    If Err.Number <> 0 Then
+        ' tenta via New nos tipos conhecidos (CreateObject pode nao achar pelo ProgID)
+        InstanciaOK = sClasse & ": CreateObject ERRO " & Err.Number & " (" & Err.Description & ")"
+    Else
+        InstanciaOK = sClasse & ": CreateObject OK"
+    End If
+    Set o = Nothing
+    On Error GoTo 0
+End Function

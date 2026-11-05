@@ -417,3 +417,69 @@ Public Sub Diagnostico_Varre_Formato()
     EscreveTexto sResp, sOrig
     MsgBox sMsg, vbInformation, "Varre Formato"
 End Sub
+
+'===========================================================================
+'  Diagnostico_Captura_Resp
+'---------------------------------------------------------------------------
+'  Faz a consulta do ZERO e, no instante em que o resp aparece, COPIA o
+'  conteudo para C:\Sga\Resp\CAPTURA.txt (que NAO some), para voce conseguir
+'  abrir/copiar com calma. Tambem mostra o conteudo numa caixa.
+'
+'  Rode:  Diagnostico_Captura_Resp "CVN8588"
+'===========================================================================
+Public Sub Diagnostico_Captura_Resp(Optional ByVal wPlaca As String = "CVN8588")
+    Dim ofuncoes As CanadaConnectivity.FuncoesDiversas
+    Dim oconnreq As CanadaConnectivity.ReqConsultaSelagem
+    Dim sUser As String, sReq As String, sResp As String, sCaptura As String
+    Dim bIsCloud As Boolean, i As Integer
+
+    Set ofuncoes = New CanadaConnectivity.FuncoesDiversas
+    sUser = ofuncoes.ReturnUserWindows
+    bIsCloud = IsCloud()
+
+    If bIsCloud Then
+        sUser = "SGaCloud"
+        sReq = "\\tsclient\c\sga\Req\" & sUser & ".xml"
+        sResp = "\\tsclient\c\sga\Resp\" & sUser & ".xml"
+        sCaptura = "\\tsclient\c\sga\Resp\CAPTURA.txt"
+    Else
+        sReq = "C:\Sga\Req\" & sUser & ".xml"
+        sResp = "C:\Sga\Resp\" & sUser & ".xml"
+        sCaptura = "C:\Sga\Resp\CAPTURA.txt"
+    End If
+
+    ofuncoes.ExcluiArquivos sReq
+    ofuncoes.ExcluiArquivos sResp
+
+    Set oconnreq = New CanadaConnectivity.ReqConsultaSelagem
+    oconnreq.CreateConsultaSelagem wPlaca, "", "", False, _
+        Retorna_Links_Uteis(6), Retorna_Links_Uteis(10), 6, "www.canainfo.com.br"
+
+    ' assim que o resp aparecer, copia IMEDIATAMENTE (antes de qualquer Load)
+    Dim capturou As Boolean
+    capturou = False
+    For i = 1 To 240  ' ~120s
+        If Dir(sResp) <> "" Then
+            On Error Resume Next
+            Dim conteudo As String
+            conteudo = LeTexto(sResp)
+            If Len(conteudo) > 0 Then
+                EscreveTexto sCaptura, conteudo
+                capturou = True
+                Exit For
+            End If
+            On Error GoTo 0
+        End If
+        Sleep 250
+        DoEvents
+    Next i
+
+    If Not capturou Then
+        MsgBox "O resp nao apareceu. Host/extensao rodando?", vbCritical
+        Exit Sub
+    End If
+
+    MsgBox "Capturei o resp em:" & vbCrLf & sCaptura & vbCrLf & vbCrLf & _
+           "Tamanho: " & Len(conteudo) & " chars" & vbCrLf & vbCrLf & _
+           "---- CONTEUDO ----" & vbCrLf & conteudo, vbInformation, "Captura Resp"
+End Sub

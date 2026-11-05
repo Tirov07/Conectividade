@@ -295,23 +295,23 @@ Public Sub Diagnostico_Isola_Classe()
 
     '--- 2) Na classe LoadRespConsultaSelagem, acessar propriedades ANTES de Load ---
     sMsg = sMsg & "---- antes do Load_Objetos ----" & vbCrLf
-    Dim oR As CanadaConnectivity.LoadRespConsultaSelagem
+    Dim oResp2 As CanadaConnectivity.LoadRespConsultaSelagem
     On Error Resume Next
-    Set oR = New CanadaConnectivity.LoadRespConsultaSelagem
+    Set oResp2 = New CanadaConnectivity.LoadRespConsultaSelagem
     Err.Clear
     Dim dummy As Variant
 
-    dummy = oR.oSTATUS
+    dummy = oResp2.oSTATUS
     sMsg = sMsg & "ler oSTATUS antes do Load: " & IIf(Err.Number = 0, "OK (" & dummy & ")", "ERRO " & Err.Number) & vbCrLf
     Err.Clear
 
     Dim oGruNada As Boolean
-    oGruNada = (oR.oGRU Is Nothing)
+    oGruNada = (oResp2.oGRU Is Nothing)
     sMsg = sMsg & "oGRU Is Nothing antes do Load: " & IIf(Err.Number = 0, CStr(oGruNada), "ERRO " & Err.Number & " (" & Err.Description & ")") & vbCrLf
     Err.Clear
 
     Dim oVeicNada As Boolean
-    oVeicNada = (oR.oVeiculo Is Nothing)
+    oVeicNada = (oResp2.oVeiculo Is Nothing)
     sMsg = sMsg & "oVeiculo Is Nothing antes do Load: " & IIf(Err.Number = 0, CStr(oVeicNada), "ERRO " & Err.Number & " (" & Err.Description & ")") & vbCrLf
     On Error GoTo 0
 

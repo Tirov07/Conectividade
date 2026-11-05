@@ -332,3 +332,88 @@ Private Function InstanciaOK(ByVal sClasse As String) As String
     Set o = Nothing
     On Error GoTo 0
 End Function
+
+'===========================================================================
+'  Diagnostico_Varre_Formato
+'---------------------------------------------------------------------------
+'  Como namespace nao resolveu, este teste varre HIPOTESES de formato que a
+'  DLL Load_Objetos pode exigir, gerando variantes do resp e tentando o Load
+'  em cada uma. A primeira que der "OK" revela o que a DLL precisa.
+'
+'  Variantes testadas:
+'   0) original (como a extensao gravou)
+'   1) sem a 1a linha <?xml ...?>  (declaracao removida)
+'   2) declaracao trocada p/ ISO-8859-1
+'   3) declaracao trocada p/ Windows-1252
+'   4) STATUS minusculo <STATUS>true</STATUS>
+'   5) raiz sem xmlns E declaracao ISO-8859-1 juntas
+'   6) tudo em UMA linha (sem quebras/identacao)
+'
+'  Rode DEPOIS de uma consulta (precisa existir o resp). Ex.:
+'       Diagnostico_Varre_Formato
+'===========================================================================
+Public Sub Diagnostico_Varre_Formato()
+    Dim ofuncoes As CanadaConnectivity.FuncoesDiversas
+    Dim sUser As String, sResp As String, sMsg As String, sOrig As String
+
+    Set ofuncoes = New CanadaConnectivity.FuncoesDiversas
+    sUser = ofuncoes.ReturnUserWindows
+    sResp = "C:\Sga\Resp\" & sUser & ".xml"
+
+    If Dir(sResp) = "" Then
+        MsgBox "Nao existe " & sResp & ". Faca uma consulta primeiro.", vbCritical
+        Exit Sub
+    End If
+    sOrig = LeTexto(sResp)
+
+    sMsg = "=== VARRE FORMATO ===" & vbCrLf
+
+    ' 0) original
+    sMsg = sMsg & "0) original                 -> " & TentaLoad(sResp, sOrig, sUser) & vbCrLf
+
+    ' 1) sem a declaracao <?xml?>
+    Dim s1 As String
+    s1 = sOrig
+    If InStr(s1, "?>") > 0 Then s1 = Mid(s1, InStr(s1, "?>") + 2)
+    s1 = LTrim(Replace(Replace(s1, vbCr, ""), vbLf, "")) ' tira quebra inicial
+    s1 = sOrig ' recomputa de forma segura abaixo
+    Dim p As Long
+    p = InStr(sOrig, "?>")
+    If p > 0 Then s1 = Mid(sOrig, p + 2) Else s1 = sOrig
+    sMsg = sMsg & "1) sem <?xml?>              -> " & TentaLoad(sResp, s1, sUser) & vbCrLf
+
+    ' 2) declaracao ISO-8859-1
+    Dim s2 As String
+    s2 = Replace(sOrig, "encoding=""utf-8""", "encoding=""ISO-8859-1""")
+    s2 = Replace(s2, "encoding=""UTF-8""", "encoding=""ISO-8859-1""")
+    sMsg = sMsg & "2) encoding ISO-8859-1      -> " & TentaLoad(sResp, s2, sUser) & vbCrLf
+
+    ' 3) declaracao Windows-1252
+    Dim s3 As String
+    s3 = Replace(sOrig, "encoding=""utf-8""", "encoding=""Windows-1252""")
+    s3 = Replace(s3, "encoding=""UTF-8""", "encoding=""Windows-1252""")
+    sMsg = sMsg & "3) encoding Windows-1252    -> " & TentaLoad(sResp, s3, sUser) & vbCrLf
+
+    ' 4) STATUS minusculo
+    Dim s4 As String
+    s4 = Replace(sOrig, "<STATUS>True</STATUS>", "<STATUS>true</STATUS>")
+    s4 = Replace(s4, "<STATUS>False</STATUS>", "<STATUS>false</STATUS>")
+    sMsg = sMsg & "4) STATUS minusculo         -> " & TentaLoad(sResp, s4, sUser) & vbCrLf
+
+    ' 5) sem xmlns + ISO-8859-1
+    Dim s5 As String
+    s5 = Replace(s2, " xmlns=""www.canainfo.com.br""", "")
+    s5 = Replace(s5, " xmlns=""http://www.canainfo.com.br""", "")
+    sMsg = sMsg & "5) sem xmlns + ISO-8859-1   -> " & TentaLoad(sResp, s5, sUser) & vbCrLf
+
+    ' 6) tudo numa linha so
+    Dim s6 As String
+    s6 = Replace(sOrig, vbCrLf, "")
+    s6 = Replace(s6, vbCr, "")
+    s6 = Replace(s6, vbLf, "")
+    sMsg = sMsg & "6) linha unica              -> " & TentaLoad(sResp, s6, sUser) & vbCrLf
+
+    ' restaura
+    EscreveTexto sResp, sOrig
+    MsgBox sMsg, vbInformation, "Varre Formato"
+End Sub

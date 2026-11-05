@@ -969,7 +969,17 @@ public static class Program
     private static void SerializarXml(Type tipo, object obj, string caminho)
     {
         var ser = new XmlSerializer(tipo);
-        var settings = new XmlWriterSettings { Indent = true, Encoding = new System.Text.UTF8Encoding(false) };
+        // OmitXmlDeclaration: a DLL legada do SGA (Load_Objetos) NÃO aceita a
+        // linha <?xml version="1.0" encoding="utf-8"?> no topo — com ela, o
+        // Load_Objetos estourava "objeto não definido" (80004003). Confirmado
+        // por diagnóstico no SGA: removendo a declaração, o Load_Objetos passa
+        // (STATUS=True). O app antigo gravava o XML SEM essa primeira linha.
+        var settings = new XmlWriterSettings
+        {
+            Indent = true,
+            Encoding = new System.Text.UTF8Encoding(false),
+            OmitXmlDeclaration = true
+        };
         var ns = new XmlSerializerNamespaces();
         ns.Add("", "www.canainfo.com.br");
 

@@ -183,3 +183,90 @@ Public Sub Diagnostico_Consulta_Completa(Optional ByVal wPlaca As String = "CVN8
     Sleep 300
     Diagnostico_Resp
 End Sub
+
+'===========================================================================
+'  Diagnostico_Testa_Namespace
+'---------------------------------------------------------------------------
+'  Testa a hipotese de que a DLL Load_Objetos so acha os nos quando o XML
+'  esta SEM namespace (ou com outro namespace). Pega o resp atual, gera 3
+'  variantes em C:\Sga\Resp e tenta Load_Objetos em cada uma:
+'     A) como esta  (xmlns="www.canainfo.com.br")
+'     B) SEM nenhum xmlns
+'     C) com xmlns="http://www.canainfo.com.br"  (com http://)
+'
+'  Rode DEPOIS de uma consulta (para existir o resp). Ex.:
+'       Diagnostico_Testa_Namespace
+'  Me mande o texto da caixa.
+'===========================================================================
+Public Sub Diagnostico_Testa_Namespace()
+    Dim ofuncoes As CanadaConnectivity.FuncoesDiversas
+    Dim sUser As String, sResp As String, sMsg As String
+    Dim sOrig As String
+
+    Set ofuncoes = New CanadaConnectivity.FuncoesDiversas
+    sUser = ofuncoes.ReturnUserWindows
+    sResp = "C:\Sga\Resp\" & sUser & ".xml"
+
+    If Dir(sResp) = "" Then
+        MsgBox "Nao existe " & sResp & ". Faca uma consulta primeiro e rode de novo.", vbCritical
+        Exit Sub
+    End If
+
+    ' le o conteudo atual
+    sOrig = LeTexto(sResp)
+    sMsg = "=== TESTE DE NAMESPACE ===" & vbCrLf
+
+    ' --- Variante A: como esta ---
+    sMsg = sMsg & "A) original  -> " & TentaLoad(sResp, sOrig, sUser) & vbCrLf
+
+    ' --- Variante B: SEM xmlns ---
+    Dim sSemNs As String
+    sSemNs = Replace(sOrig, " xmlns=""www.canainfo.com.br""", "")
+    sSemNs = Replace(sSemNs, " xmlns=""http://www.canainfo.com.br""", "")
+    sMsg = sMsg & "B) sem xmlns -> " & TentaLoad(sResp, sSemNs, sUser) & vbCrLf
+
+    ' --- Variante C: com http:// ---
+    Dim sHttp As String
+    sHttp = Replace(sOrig, "xmlns=""www.canainfo.com.br""", "xmlns=""http://www.canainfo.com.br""")
+    sMsg = sMsg & "C) http://   -> " & TentaLoad(sResp, sHttp, sUser) & vbCrLf
+
+    ' restaura o original
+    EscreveTexto sResp, sOrig
+
+    MsgBox sMsg, vbInformation, "Teste Namespace"
+End Sub
+
+Private Function TentaLoad(ByVal sResp As String, ByVal sConteudo As String, ByVal sUser As String) As String
+    On Error Resume Next
+    EscreveTexto sResp, sConteudo
+    Dim oResp As CanadaConnectivity.LoadRespConsultaSelagem
+    Set oResp = New CanadaConnectivity.LoadRespConsultaSelagem
+    Err.Clear
+    oResp.Load_Objetos sUser, False
+    If Err.Number <> 0 Then
+        TentaLoad = "ERRO " & Err.Number & " (" & Err.Description & ")"
+    Else
+        TentaLoad = "OK  STATUS=" & oResp.oSTATUS
+    End If
+    Set oResp = Nothing
+    On Error GoTo 0
+End Function
+
+Private Function LeTexto(ByVal sPath As String) As String
+    Dim iFile As Integer, s As String
+    iFile = FreeFile
+    Open sPath For Binary Access Read As #iFile
+    s = Space$(LOF(iFile))
+    Get #iFile, 1, s
+    Close #iFile
+    LeTexto = s
+End Function
+
+Private Sub EscreveTexto(ByVal sPath As String, ByVal sConteudo As String)
+    Dim iFile As Integer
+    If Dir(sPath) <> "" Then Kill sPath
+    iFile = FreeFile
+    Open sPath For Binary Access Write As #iFile
+    Put #iFile, 1, sConteudo
+    Close #iFile
+End Sub
